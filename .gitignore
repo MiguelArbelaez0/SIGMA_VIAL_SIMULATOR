@@ -1,0 +1,37 @@
+# Entornos y valores privados
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Python, pruebas y herramientas
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+junit*.xml
+
+# Distribución y metadatos generados
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Archivos personales y temporales
+.idea/
+.vscode/
+*.code-workspace
+*.tmp
+*.temp
+*.log
+*.swp
+*~
+Thumbs.db
+.DS_Store
