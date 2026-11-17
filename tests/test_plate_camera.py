@@ -16,6 +16,6 @@ def test_rear_plate_is_inside_image_and_follows_motion(qapp):
     assert far.crop().width() >= 200 and far.crop().height() >= 45
     assert near.plate_rect != far.plate_rect
     assert near.image != far.image
-    assert "recorte por geometría" in far.provenance
+    assert "recorte por geometrÃ­a" in far.provenance
     empty = rear_camera(None, 2)
     assert empty.track is None and empty.crop().isNull()
