@@ -107,7 +107,6 @@ def test_monitor_simulation_is_labelled_and_worker_queue_is_bounded(qtbot):
     window.simulation.running = True
     window.simulation.advance(0.2)
     monitor = MonitoringCenter(window)
-    qtbot.addWidget(monitor)
     monitor.timer.stop()
     monitor.refresh()
     assert "Percepción simulada" in monitor.status.text()

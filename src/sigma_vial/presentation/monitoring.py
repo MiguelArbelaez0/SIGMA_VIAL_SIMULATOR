@@ -122,6 +122,9 @@ class MonitoringCenter(QDialog):
     def __init__(self, owner):
         super().__init__(owner)
         self.owner = owner
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.generation = 0
+        self.submitted_generation = -1
         self.setWindowTitle("SIGMA VIAL · Centro de monitoreo")
         self.resize(1150, 850)
         self.setStyleSheet(
@@ -224,6 +227,7 @@ class MonitoringCenter(QDialog):
         self.video_start = time.monotonic()
 
     def reset_tracking(self):
+        self.generation += 1
         self.selected_track = None
         self.pixel_tracker = ImageTracker(
             ImageCalibration(
@@ -234,9 +238,6 @@ class MonitoringCenter(QDialog):
 
     def reset_video(self):
         self.error = ""
-        if self.future is not None and not self.future.done():
-            self.status.setText("Esperando a terminar el fotograma actual antes de reiniciar.")
-            return
         self.video_start = time.monotonic()
         self.running_video = self.source is not None
         self.reset_tracking()
@@ -357,6 +358,8 @@ class MonitoringCenter(QDialog):
                 track.speed = d.speed
                 track.wait = d.wait
                 track.state = "confirmado" if track.hits >= 2 else "detectado"
+            tracks = {k: t for k, t in tracks.items() if sim.time - t.last_seen <= 10}
+            self.simulated_tracks[access] = tracks
             for track in tracks.values():
                 if sim.time - track.last_seen > 0.2:
                     track.state = "finalizado" if sim.time - track.last_seen > 1.5 else "perdido"
@@ -389,10 +392,17 @@ class MonitoringCenter(QDialog):
 
     def refresh(self):
         mode = self.mode.currentIndex()
+        token = id(self.owner.simulation.plates)
+        if token != self.session_token:
+            self.session_token = token
+            self.simulated_tracks = {a: {} for a in Access}
+            self.reset_tracking()
         if self.future is not None and self.future.done():
             try:
                 result = self.future.result()
-                if result and mode == self.submitted_mode:
+                if self.submitted_generation != self.generation:
+                    result = "obsolete"
+                if not isinstance(result, str) and result and mode == self.submitted_mode:
                     frame, detections = result
                     height, width = frame.pixels.shape[:2]
                     tracks = self.pixel_tracker.update(detections, frame.timestamp, height)
@@ -460,6 +470,7 @@ class MonitoringCenter(QDialog):
             return
         if mode == 1:
             if self.running_video:
+                self.submitted_generation = self.generation
                 self.submitted_mode = mode
                 self.future = self.executor.submit(
                     self.process_video, time.monotonic() - self.video_start
@@ -478,6 +489,7 @@ class MonitoringCenter(QDialog):
                     .reshape(image.height(), image.width(), 3)
                     .copy()
                 )
+                self.submitted_generation = self.generation
                 self.submitted_mode = mode
                 self.future = self.executor.submit(
                     self.process_pixels,
@@ -505,6 +517,8 @@ class MonitoringCenter(QDialog):
 
     def expand(self, access):
         dialog = QDialog(self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.finished.connect(lambda: self.expanded.remove(dialog))
         dialog.setWindowTitle(self.views[access].title)
         dialog.resize(700, 750)
         layout = QVBoxLayout(dialog)
@@ -515,7 +529,10 @@ class MonitoringCenter(QDialog):
         dialog.show()
 
     def closeEvent(self, event):
+        self.generation += 1
         self.timer.stop()
+        for dialog in list(self.expanded):
+            dialog.close()
         source = self.source
         if self.future is not None and not self.future.done():
             if source:

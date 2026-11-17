@@ -84,6 +84,7 @@ class VirtualCamera:
     _counted: set[int] = field(default_factory=set)
     _tracks: dict[int, str] = field(default_factory=dict)
     _next_track: int = 0
+    _passage_count: int = 0
 
     @property
     def identifier(self):
@@ -102,12 +103,21 @@ class VirtualCamera:
             and time - self.last_result.observed_at < self.interval - 1e-9
         ):
             return self.last_result
+        present = {v.identifier for v in vehicles if v.access is self.access}
+        self._previous = {k: v for k, v in self._previous.items() if k in present}
+        self._tracks = {k: v for k, v in self._tracks.items() if k in present}
+        self._counted.intersection_update(present)
         detected = []
         for v in vehicles:
             if v.access is not self.access or v.lane not in self.lanes:
                 continue
             previous = self._previous.get(v.identifier)
-            if previous is not None and previous < self.count_line <= v.position:
+            if (
+                previous is not None
+                and previous < self.count_line <= v.position
+                and v.identifier not in self._counted
+            ):
+                self._passage_count += 1
                 self._counted.add(v.identifier)
             self._previous[v.identifier] = v.position
             if not self.start <= v.position <= self.end:
@@ -138,7 +148,7 @@ class VirtualCamera:
                 )
             )
         self.last_result = TrafficSummary(
-            self.access, time, self.status, tuple(detected), len(self._counted)
+            self.access, time, self.status, tuple(detected), self._passage_count
         )
         return self.last_result
 

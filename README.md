@@ -414,3 +414,7 @@ El fotograma de video dentro de la última captura deriva del clip CC BY 4.0 cit
 se distribuye con esa licencia y atribución. Las pruebas de seguimiento y la revisión
 de capturas complementan la evaluación anotada; no sustituyen una validación de
 precisión con cámaras representativas, ni una prueba humana continua de operación.
+
+### Monitoreo: sesiones y retención
+
+Cada cambio de seguimiento, modo o sesión invalida los trabajos anteriores mediante una generación. Un resultado pendiente nunca restaura el reloj de la sesión anterior. Las ventanas se destruyen al cerrarlas; los puntos por trayectoria se limitan a 128 y los seguimientos sin observaciones caducan a los 10 segundos. Los mapas de cámaras simuladas retienen únicamente vehículos presentes; el contador acumulado se conserva. El registro de placas usadas es independiente y no se poda con los historiales.

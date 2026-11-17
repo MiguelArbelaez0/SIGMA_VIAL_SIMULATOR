@@ -51,6 +51,7 @@ class ImageTracker:
     def update(self, detections: list[ImageDetection], timestamp: float, height: int):
         if timestamp <= self.last_time:
             return list(self.tracks.values())
+        self.tracks = {k: t for k, t in self.tracks.items() if timestamp - t.last_seen <= 10}
         self.last_time = timestamp
         available = {
             key

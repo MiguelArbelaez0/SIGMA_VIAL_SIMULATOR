@@ -737,12 +737,15 @@ class MainWindow(QMainWindow):
     def _open_monitoring(self):
         from sigma_vial.presentation.monitoring import MonitoringCenter
 
-        if not hasattr(self, "monitoring_center") or not self.monitoring_center.isVisible():
+        if getattr(self, "monitoring_center", None) is None:
             self.monitoring_center = MonitoringCenter(self)
+            self.monitoring_center.destroyed.connect(
+                lambda: setattr(self, "monitoring_center", None)
+            )
         self.monitoring_center.show()
         self.monitoring_center.raise_()
 
     def closeEvent(self, event):
-        if hasattr(self, "monitoring_center"):
+        if getattr(self, "monitoring_center", None) is not None:
             self.monitoring_center.close()
         super().closeEvent(event)
