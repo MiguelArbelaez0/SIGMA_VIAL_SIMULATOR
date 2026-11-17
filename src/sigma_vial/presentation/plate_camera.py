@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QBuffer, QIODevice, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter
 
 
@@ -55,3 +55,12 @@ def rear_camera(vehicle, timestamp: float, camera="virtual-rear") -> PlateCamera
         painter.drawText(190, 180, "Sin vehículo en cobertura")
     painter.end()
     return PlateCameraFrame(image, rect, timestamp, camera, track)
+
+
+def image_png(image: QImage) -> bytes:
+    if image.isNull():
+        return b""
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    return bytes(buffer.data())
