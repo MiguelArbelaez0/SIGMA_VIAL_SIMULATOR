@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QLabel, QPushButton
 from pytestqt.qtbot import QtBot
 
 from sigma_vial.domain.scenario import Access
+from sigma_vial.domain.simulation import Scenario
 from sigma_vial.presentation.main_window import MainWindow
 
 
@@ -20,7 +21,14 @@ def test_window_title_and_required_texts(qtbot: QtBot) -> None:
         "Vista inicial · Simulación detenida",
     } <= texts
     button_texts = {button.text() for button in window.findChildren(QPushButton)}
-    assert {"Acercar", "Alejar", "Restablecer vista"} <= button_texts
+    assert {"+", "−", "Restablecer"} <= button_texts
+    assert window.scenario_combo.currentData() is Scenario.BALANCED
+    assert window.config_panel.isHidden()
+    assert window.details_panel.isHidden()
+    window._refresh_simulation()
+    assert "Demanda pendiente" in window.metrics.text()
+    assert "Verde transcurrido" in window.metrics.text()
+    assert "Motivo:" in window.metrics.text()
 
 
 def test_window_can_be_shown_resized_and_closed(qtbot: QtBot) -> None:
@@ -45,15 +53,15 @@ def test_view_controls_zoom_and_restore_full_scene(qtbot: QtBot) -> None:
     view = window.intersection_view
     view.reset_view()
     initial_scale = view.transform().m11()
-    buttons["Acercar"].click()
+    buttons["+"].click()
     zoomed_scale = view.transform().m11()
     assert zoomed_scale > initial_scale
-    buttons["Alejar"].click()
+    buttons["−"].click()
     assert view.transform().m11() == pytest.approx(initial_scale)
     for _ in range(12):
         view.zoom_in()
     assert view.zoom_steps == 6
-    buttons["Restablecer vista"].click()
+    buttons["Restablecer"].click()
     assert view.zoom_steps == 0
     assert view.transform().m11() == pytest.approx(initial_scale)
     assert (
@@ -93,7 +101,7 @@ def test_scenario_reload_and_manual_pedestrian_are_reflected(qtbot: QtBot) -> No
     qtbot.addWidget(window)
     window._add_pedestrian(Access.WEST)
     assert len(window.pedestrian_items) == 1
-    window.scenario_combo.setCurrentIndex(3)
+    window.scenario_combo.setCurrentIndex(window.scenario_combo.findData(Scenario.TWO_PEDESTRIANS))
     window._load_scenario()
     assert not window.simulation.running
     assert window.simulation.pedestrian_waiting() == 2

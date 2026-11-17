@@ -104,25 +104,28 @@ coordina el temporizador y dibuja entidades desde el estado del motor.
 ## Simulación funcional
 
 Intersección ficticia en “+” con accesos norte, sur, oriente y occidente; cada acceso
-tendrá un semáforo vehicular, dos carriles de entrada y dos de salida. Se prevén
-vehículos y peatones virtuales, decisiones centralizadas por demanda, espera y
-ocupación, transiciones con amarillo y despeje, controles de inicio, pausa,
-reinicio y demanda, y visualización de filas, esperas y fase actual.
+tiene un semáforo vehicular, dos carriles de entrada y dos de salida. El motor mueve
+vehículos y peatones virtuales, decide por demanda, espera y ocupación, y administra
+fases de inicio, pausa, reinicio y despeje.
 
-Supuestos iniciales: solo movimientos rectos; norte-sur comparte fase y
-oriente-occidente comparte otra. **Los peatones tendrán una fase exclusiva**.
-Implementado en esta etapa:
+Supuestos del modelo: solo movimientos rectos; norte-sur comparte fase y
+oriente-occidente comparte otra. Los peatones tienen fase exclusiva con admisión y
+despeje separados. Implementado:
 
 - Cruce en “+” con norte arriba, sur abajo, oriente a la derecha y occidente a la izquierda.
 - Dos carriles de entrada y dos de salida por brazo (8 + 8 en total), circulación
   por la derecha, flechas rectas, separación de sentidos y líneas discontinuas.
 - Aceras, cuatro pasos peatonales y detención antes del paso en cada entrada.
-- Cuatro semáforos etiquetados, inicialmente rojos, fuera de las calzadas. El
-  componente puede representar rojo, amarillo o verde, sin cambios automáticos
-  ni controles manuales de fases. Cada uno corresponde a los dos carriles de entrada.
-- Panel informativo, estado «Vista inicial · Simulación detenida» y controles
-  **Acercar**, **Alejar** y **Restablecer vista**. Se puede arrastrar el plano al
-  ampliar. El zoom está acotado; restablecer encuadra los cuatro brazos.
+- Cuatro semáforos etiquetados, inicialmente rojos, sincronizados con las fases del
+  motor y los dos carriles de entrada de cada acceso.
+- Vehículos vectoriales con aceleración, frenado, cola espaciada y salida tras despejar
+  el cruce; peatones vectoriales visibles en los pasos y aceras. El indicador de fase,
+  colas, peatones y luces se actualiza desde el estado de la simulación.
+- Controles principales siempre visibles para iniciar, pausar/reanudar, reiniciar,
+  velocidad y vista. La configuración de demanda y escenarios está plegada al inicio;
+  las métricas detalladas también se pueden desplegar.
+- El escenario inicial equilibrado genera 12 vehículos/minuto por acceso y 2,4
+  peatones/minuto. Las llegadas empiezan al pulsar Iniciar y pueden ajustarse.
 - Ajuste de escena al redimensionar, tamaño mínimo de ventana de 800 × 600 unidades
   lógicas y desplazamiento vertical del panel cuando falta espacio. Para inspeccionar
   detalles en ventanas pequeñas, usar Acercar y después Restablecer vista.
@@ -130,19 +133,30 @@ Implementado en esta etapa:
   instalada funciona sin internet y no depende de la captura para dibujar el cruce.
 
 La simulación implementa avance determinista con pasos de 0,05 s, semilla configurable,
-cuatro colas de acceso, demanda por acceso, velocidad global, peatones y fases de
-admisión/despeje. El control selecciona por espera, reserva demanda que alcance el
-límite académico de 45 s, atiende la prioridad de dos peatones después del verde
-mínimo, considera cuatro segundos de carril activo vacío y limita el verde a 32 s
-cuando hay demanda. Parámetros (verde mínimo 8 s, amarillo 3 s, despeje 2 s,
+demanda por cada acceso y medición por los dos ejes. La demanda pendiente incluye
+vehículos detenidos, aproximándose y llegadas diferidas; los que salen del cruce no
+cuentan para retener el verde. Después del mínimo de verde se comparan cantidades y
+esperas; la diferencia debe persistir 1 s, mientras la espera máxima tiene prioridad.
+Un carril activo vacío durante 4 s solicita el relevo. Si ambos ejes esperan, el verde
+continuo se limita a 32 s. Sin demanda incompatible ni peatones, el verde puede
+mantenerse. El contador del verde comienza al habilitar la fase y no se reinicia con
+nuevas llegadas. Los parámetros (verde mínimo 8 s, amarillo 3 s, despeje 2 s,
 admisión peatonal 8 s) son supuestos didácticos, no tiempos certificados para una vía.
-Los vehículos mantienen separación, se detienen antes de la línea y siguen dentro
-hasta que su parte trasera despeja el cruce. Una salida bloqueada mantiene el vehículo
-antes de entrar y puede liberarse desde el motor.
+
+La posición de parada se comparte con la geometría de dibujo y descuenta la mitad de
+la longitud del vehículo y un margen de 4 unidades: la carrocería queda antes de la
+línea, que está antes de la cebra. Las filas conservan al menos 8 unidades entre
+carrocerías. Al cambiar de fase, amarillo cierra nuevas admisiones; los vehículos
+comprometidos pueden entrar y el rojo de despeje espera a que la parte trasera de
+cualquier vehículo comprometido salga de la zona de conflicto. Una salida bloqueada
+impide la entrada y el vehículo recupera el movimiento al liberarla.
+
+El panel de detalles muestra demanda pendiente por eje, detenidos y aproximándose,
+vehículos saliendo, espera máxima por eje, duración del verde y motivo de decisión.
 
 La interfaz incluye iniciar, pausar/reanudar, reiniciar conservando tasas de demanda,
 ritmo 0,5×/1×/2×/4×, demanda en vehículos/minuto y peatones/minuto, incorporación
-manual y ocho escenarios reproducibles detenidos. Dibujos, luces y métricas proceden
+manual y escenarios reproducibles cargados en pausa. Dibujos, luces y métricas proceden
 del motor. Acercar, alejar y restablecer vista son independientes del reloj simulado.
 
 Parámetros pendientes de mayor validación: restricciones reales de capacidad de las

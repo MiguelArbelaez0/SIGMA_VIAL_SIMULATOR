@@ -14,9 +14,13 @@ from sigma_vial.presentation.traffic_light import TrafficLightItem
 
 
 class IntersectionScene(QGraphicsScene):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        geometry: IntersectionGeometry | None = None,
+    ) -> None:
         super().__init__(parent)
-        self.geometry = IntersectionGeometry()
+        self.geometry = geometry or IntersectionGeometry()
         self.approaches = initial_approaches()
         extent = self.geometry.arm_extent + self.geometry.scene_margin
         self.setSceneRect(-extent, -extent, 2 * extent, 2 * extent)

@@ -20,8 +20,10 @@ class Phase(Enum):
 
 
 class Scenario(Enum):
-    NORTH_SOUTH = "Tráfico norte-sur"
-    EAST_WEST = "Tráfico oriente-occidente"
+    BALANCED = "Tráfico equilibrado"
+    NORTH_SOUTH = "Mayor tráfico Norte–Sur"
+    EAST_WEST = "Mayor tráfico Oriente–Occidente"
+    PEDESTRIANS = "Más peatones"
     ALL_ACCESS = "Demanda en cuatro accesos"
     TWO_PEDESTRIANS = "Dos peatones y un vehículo"
     ONE_PEDESTRIAN = "Un peatón y tráfico continuo"
@@ -42,13 +44,36 @@ class SimulationConfig:
     walk_admission: float = 8
     walk_speed: float = 48
     vehicle_speed: float = 110
-    vehicle_rate: float = 0.12
-    pedestrian_rate: float = 0.025
-    spawn_gap: float = 30
-    lane_length: float = 600
-    intersection_half: float = 116
-    vehicle_length: float = 24
+    vehicle_acceleration: float = 38
+    vehicle_braking: float = 110
+    vehicle_rate: float = 0.20
+    pedestrian_rate: float = 0.05
+    approach_extent: float = 430
+    stop_line_distance: float = 186
+    stop_margin: float = 4
+    spawn_gap: float = 36
+    lane_length: float = 860
+    intersection_half: float = 186
+    pedestrian_crossing_length: float = 232
+    vehicle_length: float = 28
+    demand_switch_margin: int = 1
+    demand_persistence: float = 1
     seed: int = 1
+
+    @property
+    def stop_position(self) -> float:
+        """Vehicle-center position before the line, accounting for its full body."""
+        return (
+            self.approach_extent
+            - self.stop_line_distance
+            - self.vehicle_length / 2
+            - self.stop_margin
+        )
+
+    @property
+    def conflict_exit(self) -> float:
+        """Center travel position after the rear clears the far edge of the conflict zone."""
+        return self.approach_extent + self.intersection_half + self.vehicle_length / 2
 
 
 @dataclass
@@ -59,6 +84,9 @@ class Vehicle:
     position: float = 0
     wait: float = 0
     inside: bool = False
+    exiting: bool = False
+    committed: bool = False
+    speed: float = 0
 
 
 @dataclass
@@ -79,8 +107,8 @@ class Simulation:
     phase: Phase = Phase.IDLE
     phase_time: float = 0
     requested: dict[Access, int] = field(default_factory=lambda: dict.fromkeys(Access, 0))
-    vehicle_rates: dict[Access, float] = field(default_factory=lambda: dict.fromkeys(Access, 3.0))
-    pedestrian_rate: float = 0.75
+    vehicle_rates: dict[Access, float] = field(default_factory=lambda: dict.fromkeys(Access, 12.0))
+    pedestrian_rate: float = 2.4
     vehicles: list[Vehicle] = field(default_factory=list)
     pedestrians: list[Pedestrian] = field(default_factory=list)
     completed_vehicles: int = 0
@@ -91,6 +119,10 @@ class Simulation:
     _rng: random.Random = field(init=False, repr=False)
     _next_id: int = 0
     _empty_time: float = 0
+    _opposing_advantage_time: float = 0
+    _pending_phase: Phase | None = None
+    _last_green_elapsed: float = 0
+    _last_axis: str | None = None
     _served: deque = field(default_factory=lambda: deque(maxlen=32), repr=False)
     _arrival_due: dict[Access, float] = field(default_factory=dict)
     _pedestrian_due: float = 0
@@ -121,18 +153,23 @@ class Simulation:
         self.vehicle_rates[access] = max(0.0, min(60.0, vehicles_per_minute))
 
     def add_vehicle(self, access: Access) -> bool:
+        if self._try_add_vehicle(access):
+            return True
+        self.requested[access] += 1
+        return False
+
+    def _try_add_vehicle(self, access: Access) -> bool:
         for lane in range(2):
             queue = self.lane_vehicles(access, lane)
             if not queue or queue[0].position >= self.config.spawn_gap:
                 self._next_id += 1
                 self.vehicles.append(Vehicle(self._next_id, access, lane))
                 return True
-        self.requested[access] += 1
         return False
 
     def add_pedestrian(self, crossing: Access) -> None:
         self._next_id += 1
-        self.pedestrians.append(Pedestrian(self._next_id, crossing, (self._next_id % 5) * 13))
+        self.pedestrians.append(Pedestrian(self._next_id, crossing, (self._next_id % 5) * 7))
 
     def set_exit_blocked(self, access: Access, blocked: bool) -> None:
         if blocked:
@@ -153,9 +190,51 @@ class Simulation:
         )
 
     def waiting(self, access: Access) -> int:
-        return (
-            sum(v.access is access and not v.inside for v in self.vehicles) + self.requested[access]
+        return self.pending_demand((access,))
+
+    def pending_demand(self, accesses: tuple[Access, ...]) -> int:
+        return sum(
+            v.access in accesses and not v.inside and not v.exiting for v in self.vehicles
+        ) + sum(self.requested[a] for a in accesses)
+
+    def stopped_vehicles(self, accesses: tuple[Access, ...]) -> int:
+        return sum(
+            v.access in accesses and not v.inside and not v.exiting and v.speed <= 0.5
+            for v in self.vehicles
         )
+
+    def approaching_vehicles(self, accesses: tuple[Access, ...]) -> int:
+        return sum(
+            v.access in accesses and not v.inside and not v.exiting and v.speed > 0.5
+            for v in self.vehicles
+        )
+
+    def exiting_vehicles(self, accesses: tuple[Access, ...]) -> int:
+        return sum(v.access in accesses and v.exiting for v in self.vehicles)
+
+    @property
+    def green_elapsed(self) -> float:
+        if self.phase in (Phase.NS_GREEN, Phase.EW_GREEN):
+            return self.phase_time
+        return self._last_green_elapsed
+
+    def axis_demand(self, axis: str) -> int:
+        return self.pending_demand(self._axis_accesses(axis))
+
+    def axis_wait(self, axis: str) -> float:
+        accesses = self._axis_accesses(axis)
+        return max(
+            (
+                v.wait
+                for v in self.vehicles
+                if v.access in accesses and not v.inside and not v.exiting
+            ),
+            default=0,
+        )
+
+    @staticmethod
+    def _axis_accesses(axis: str) -> tuple[Access, ...]:
+        return (Access.NORTH, Access.SOUTH) if axis == "ns" else (Access.EAST, Access.WEST)
 
     def pedestrian_waiting(self) -> int:
         return sum(not p.walking for p in self.pedestrians)
@@ -164,52 +243,88 @@ class Simulation:
         return any(self.waiting(a) for a in accesses)
 
     def _max_wait(self, accesses: tuple[Access, ...]) -> float:
-        return max((v.wait for v in self.vehicles if v.access in accesses), default=0)
+        return max(
+            (
+                v.wait
+                for v in self.vehicles
+                if v.access in accesses and not v.inside and not v.exiting
+            ),
+            default=0,
+        )
 
     def _finish_phase(self, reason: str) -> None:
         self.phase = Phase.CLEARANCE
         self.phase_time = 0
         self.decision = reason
         self._empty_time = 0
+        self._opposing_advantage_time = 0
 
     def _choose_phase(self) -> None:
-        ns, ew = (Access.NORTH, Access.SOUTH), (Access.EAST, Access.WEST)
+        ns_demand, ew_demand = self.axis_demand("ns"), self.axis_demand("ew")
         p_wait = max((p.wait for p in self.pedestrians if not p.walking), default=0)
-        candidates = []
-        for key, wait, demand in (
-            ("pedestrian", p_wait, self.pedestrian_waiting() > 0),
-            ("ns", self._max_wait(ns), self._demand(ns)),
-            ("ew", self._max_wait(ew), self._demand(ew)),
-        ):
-            if demand and wait >= (
-                self.config.max_pedestrian_wait
-                if key == "pedestrian"
-                else self.config.max_vehicle_wait
-            ):
-                candidates.append((wait, key))
-        if candidates:
-            longest = max(x[0] for x in candidates)
-            tied = [x[1] for x in candidates if x[0] == longest]
-            key = tied[0]
-            for previous in reversed(self._served):
-                if previous in tied:
-                    key = tied[(tied.index(previous) + 1) % len(tied)]
-                    break
-            self.decision = f"Atención reservada por espera máxima: {key}."
-        elif self.pedestrian_waiting() >= 2 and self._demand(ns + ew):
+        ns_wait, ew_wait = self.axis_wait("ns"), self.axis_wait("ew")
+        pedestrian_waiting = self.pedestrian_waiting() > 0
+        if pedestrian_waiting and p_wait >= self.config.max_pedestrian_wait:
             key = "pedestrian"
-            self.decision = "Atención peatonal por demanda de dos personas."
+            reason = "Atención peatonal por espera máxima."
+        elif ns_demand and ns_wait >= self.config.max_vehicle_wait and ns_wait >= ew_wait:
+            key = "ns"
+            reason = "Atención Norte–Sur por espera máxima."
+        elif ew_demand and ew_wait >= self.config.max_vehicle_wait and ew_wait >= ns_wait:
+            key = "ew"
+            reason = "Atención Oriente–Occidente por espera máxima."
+        elif self.pedestrian_waiting() >= 2 and (ns_demand or ew_demand):
+            key = "pedestrian"
+            reason = "Atención peatonal por demanda de dos personas."
+        elif pedestrian_waiting and not ns_demand and not ew_demand:
+            key = "pedestrian"
+            reason = "Atención de peatones en espera."
         else:
-            key = max(("ns", "ew"), key=lambda x: self._max_wait(ns if x == "ns" else ew))
-            if self.pedestrian_waiting() and not self._demand(ns + ew):
-                key = "pedestrian"
-                self.decision = "Atención de peatones en espera."
+            if ns_demand and not ew_demand:
+                key, reason = "ns", "Atención de la demanda Norte–Sur."
+            elif ew_demand and not ns_demand:
+                key, reason = "ew", "Atención de la demanda Oriente–Occidente."
+            elif not ns_demand and not ew_demand and pedestrian_waiting:
+                key, reason = "pedestrian", "Atención de peatones en espera."
+            elif not ns_demand and not ew_demand:
+                key, reason = "ns", "Sin demanda; inicio Norte–Sur en espera de llegadas."
+            elif ns_demand > ew_demand:
+                key, reason = "ns", "Atención por mayor demanda Norte–Sur."
+            elif ew_demand > ns_demand:
+                key, reason = "ew", "Atención por mayor demanda Oriente–Occidente."
+            elif ns_wait > ew_wait:
+                key, reason = "ns", "Atención Norte–Sur por mayor espera."
+            elif ew_wait > ns_wait:
+                key, reason = "ew", "Atención Oriente–Occidente por mayor espera."
             else:
-                self.decision = "Atención de la demanda vehicular con mayor espera."
-        self.phase = {"ns": Phase.NS_GREEN, "ew": Phase.EW_GREEN, "pedestrian": Phase.WALK}.get(
+                key = "ew" if self._last_axis == "ns" else "ns"
+                reason = "Demanda similar; alternancia Norte–Sur / Oriente–Occidente."
+        self._activate_phase(key, reason)
+
+    def _activate_phase(self, key: str, reason: str) -> None:
+        phase = {"ns": Phase.NS_GREEN, "ew": Phase.EW_GREEN, "pedestrian": Phase.WALK}.get(
             key, Phase.IDLE
         )
+        self.phase = phase
         self.phase_time = 0
+        self._pending_phase = None
+        self._opposing_advantage_time = 0
+        if key in ("ns", "ew"):
+            self._last_axis = key
+        self.decision = reason
+
+    def _request_phase_change(self, key: str, reason: str) -> None:
+        self._pending_phase = {
+            "ns": Phase.NS_GREEN,
+            "ew": Phase.EW_GREEN,
+            "pedestrian": Phase.WALK,
+        }[key]
+        self._last_green_elapsed = self.phase_time
+        self.phase = Phase.NS_YELLOW if self.phase is Phase.NS_GREEN else Phase.EW_YELLOW
+        self.phase_time = 0
+        self._empty_time = 0
+        self._opposing_advantage_time = 0
+        self.decision = reason
 
     def advance(self, seconds: float, step: float = 0.05) -> None:
         if seconds < 0 or step <= 0:
@@ -237,7 +352,7 @@ class Simulation:
         for access in Access:
             count = self.requested[access]
             for _ in range(min(count, 8)):
-                if self.add_vehicle(access):
+                if self._try_add_vehicle(access):
                     self.requested[access] -= 1
                 else:
                     break
@@ -246,15 +361,23 @@ class Simulation:
         self._control(dt)
 
     def _move_vehicles(self, dt: float) -> None:
-        stop_position = self.config.lane_length - 2 * self.config.intersection_half
-        exit_position = self.config.lane_length + self.config.vehicle_length
+        stop_position = self.config.stop_position
+        conflict_exit = self.config.conflict_exit
+        exit_position = self.config.lane_length + self.config.vehicle_length / 2
         for access in Access:
             for lane in range(2):
                 queue = self.lane_vehicles(access, lane)
                 for index in range(len(queue) - 1, -1, -1):
                     vehicle = queue[index]
-                    if vehicle.inside:
-                        vehicle.position += self.config.vehicle_speed * dt
+                    if vehicle.inside or vehicle.exiting:
+                        vehicle.speed = min(
+                            self.config.vehicle_speed,
+                            vehicle.speed + self.config.vehicle_acceleration * dt,
+                        )
+                        vehicle.position += vehicle.speed * dt
+                        if vehicle.inside and vehicle.position >= conflict_exit:
+                            vehicle.inside = False
+                            vehicle.exiting = True
                         if vehicle.position >= exit_position:
                             self.vehicles.remove(vehicle)
                             self.completed_vehicles += 1
@@ -265,29 +388,59 @@ class Simulation:
                         if index == len(queue) - 1
                         else queue[index + 1].position - self.config.spawn_gap
                     )
-                    target = min(limit, stop_position)
+                    target = max(vehicle.position, min(limit, stop_position))
+                    signal = self.signals[access]
+                    yellow_committed = (
+                        signal is SignalState.YELLOW
+                        and vehicle.speed > 0.5
+                        and vehicle.position
+                        >= stop_position - vehicle.speed**2 / (2 * self.config.vehicle_braking)
+                    )
+                    vehicle.committed = vehicle.committed or yellow_committed
                     permitted = (
-                        self.signals[access] is SignalState.GREEN
+                        (signal is SignalState.GREEN or vehicle.committed)
                         and not any(person.walking for person in self.pedestrians)
                         and access not in self.blocked_exits
                         and not (self.blocked_exit and not self.blocked_exits)
                     )
                     if permitted and vehicle.position >= stop_position:
                         vehicle.inside = True
+                        vehicle.committed = False
                         vehicle.wait = 0
                         self._served.append(
                             "ns" if access in (Access.NORTH, Access.SOUTH) else "ew"
                         )
-                    elif target > vehicle.position:
-                        vehicle.position = min(
-                            target, vehicle.position + self.config.vehicle_speed * dt
+                    else:
+                        target_speed = self.config.vehicle_speed
+                        if not permitted:
+                            distance = max(0.0, target - vehicle.position)
+                            target_speed = min(
+                                target_speed,
+                                (2 * self.config.vehicle_braking * distance) ** 0.5,
+                            )
+                        if index < len(queue) - 1:
+                            leader = queue[index + 1]
+                            gap = leader.position - vehicle.position - self.config.spawn_gap
+                            if gap <= 0:
+                                target_speed = 0
+                            else:
+                                target_speed = min(target_speed, leader.speed + gap / dt)
+                        rate = (
+                            self.config.vehicle_acceleration
+                            if target_speed > vehicle.speed
+                            else self.config.vehicle_braking
                         )
+                        if vehicle.speed < target_speed:
+                            vehicle.speed = min(target_speed, vehicle.speed + rate * dt)
+                        else:
+                            vehicle.speed = max(target_speed, vehicle.speed - rate * dt)
+                        vehicle.position = min(target, vehicle.position + vehicle.speed * dt)
 
     def _move_pedestrians(self, dt: float) -> None:
         for person in self.pedestrians:
             if person.walking:
                 person.position += self.config.walk_speed * dt
-                if person.position >= 2 * self.config.intersection_half:
+                if person.position >= self.config.pedestrian_crossing_length:
                     self.pedestrians.remove(person)
                     break
             else:
@@ -302,31 +455,99 @@ class Simulation:
                 self._choose_phase()
             return
         if self.phase in (Phase.NS_GREEN, Phase.EW_GREEN):
-            active = ns if self.phase is Phase.NS_GREEN else ew
-            incompatible = ew if self.phase is Phase.NS_GREEN else ns
-            empty = not any(v.access in active for v in self.vehicles)
+            active_axis = "ns" if self.phase is Phase.NS_GREEN else "ew"
+            opposite_axis = "ew" if active_axis == "ns" else "ns"
+            active_demand = self.axis_demand(active_axis)
+            opposing_demand = self.axis_demand(opposite_axis)
+            empty = active_demand == 0
             self._empty_time = self._empty_time + dt if empty else 0
-            pedestrian_priority = (
-                self.pedestrian_waiting() >= 2 and self.phase_time >= self.config.min_green
+            if self.phase_time < self.config.min_green:
+                self.decision = f"Verde {self._axis_name(active_axis)}; mínimo de verde en curso."
+                self._opposing_advantage_time = 0
+                return
+
+            waiting_pedestrians = self.pedestrian_waiting()
+            oldest_pedestrian_wait = max(
+                (p.wait for p in self.pedestrians if not p.walking), default=0
             )
-            wants_change = self.phase_time >= self.config.min_green and (
-                (self._empty_time >= self.config.empty_interval and self._demand(incompatible))
-                or (
-                    self._demand(incompatible)
-                    and self._max_wait(incompatible) >= self.config.max_vehicle_wait
+            pedestrian_priority = waiting_pedestrians >= 2 or (
+                waiting_pedestrians > 0
+                and oldest_pedestrian_wait >= self.config.max_pedestrian_wait
+            )
+            if pedestrian_priority:
+                self._request_phase_change("pedestrian", "Cambio por prioridad peatonal.")
+                return
+
+            if (
+                waiting_pedestrians
+                and active_demand == 0
+                and self._empty_time >= self.config.empty_interval
+            ):
+                self._request_phase_change(
+                    "pedestrian", "Cambio por peatones y carril vehicular sin demanda."
                 )
-                or pedestrian_priority
-            )
-            if self.phase_time >= self.config.max_green or wants_change:
-                if self.phase is Phase.NS_GREEN:
-                    self.phase = Phase.NS_YELLOW
-                else:
-                    self.phase = Phase.EW_YELLOW
-                self.phase_time = 0
+                return
+
+            if opposing_demand == 0:
+                self._opposing_advantage_time = 0
                 self.decision = (
-                    "Cambio solicitado por vacío sostenido."
-                    if self._empty_time >= self.config.empty_interval
-                    else "Cambio seguro solicitado por demanda y espera."
+                    f"Verde {self._axis_name(active_axis)} mantenido; sin demanda incompatible."
+                )
+                return
+
+            opposing_wait = self.axis_wait(opposite_axis)
+            active_wait = self.axis_wait(active_axis)
+            if opposing_wait >= self.config.max_vehicle_wait:
+                self._request_phase_change(
+                    opposite_axis,
+                    f"Cambio por espera máxima hacia {self._axis_name(opposite_axis)}.",
+                )
+                return
+
+            if self.phase_time >= self.config.max_green:
+                self._request_phase_change(
+                    opposite_axis,
+                    f"Verde máximo alcanzado; turno de {self._axis_name(opposite_axis)}.",
+                )
+                return
+
+            if active_demand == 0 and self._empty_time >= self.config.empty_interval:
+                self._request_phase_change(
+                    opposite_axis,
+                    f"Cambio por carril activo sin demanda durante {self._empty_time:.1f} s.",
+                )
+                return
+
+            count_advantage = opposing_demand > active_demand + self.config.demand_switch_margin
+            wait_advantage = opposing_wait > active_wait
+            balanced = (
+                active_demand > 0
+                and abs(opposing_demand - active_demand) <= self.config.demand_switch_margin
+            )
+            should_consider_change = count_advantage or wait_advantage or balanced
+            if should_consider_change:
+                self._opposing_advantage_time += dt
+            else:
+                self._opposing_advantage_time = 0
+            if self._opposing_advantage_time >= self.config.demand_persistence:
+                if count_advantage:
+                    reason = f"Cambio por mayor demanda {self._axis_name(opposite_axis)}."
+                elif wait_advantage:
+                    reason = f"Cambio por mayor espera en {self._axis_name(opposite_axis)}."
+                else:
+                    reason = "Demanda similar; cambio para alternar los ejes."
+                self._request_phase_change(opposite_axis, reason)
+            elif should_consider_change:
+                self.decision = (
+                    f"Demanda pendiente {self._axis_name(active_axis)}: {active_demand}; "
+                    f"{self._axis_name(opposite_axis)}: {opposing_demand}. "
+                    f"Evaluando el relevo ({self._opposing_advantage_time:.1f}/"
+                    f"{self.config.demand_persistence:.1f} s de persistencia)."
+                )
+            else:
+                self.decision = (
+                    f"Verde {self._axis_name(active_axis)} mantenido por demanda y espera; "
+                    f"incompatible {opposing_demand}, activa {active_demand}."
                 )
             return
         if (
@@ -338,9 +559,18 @@ class Simulation:
         if (
             self.phase is Phase.CLEARANCE
             and self.phase_time >= self.config.vehicle_clearance
-            and not any(v.inside for v in self.vehicles)
+            and not any(v.inside or v.committed for v in self.vehicles)
         ):
-            self._choose_phase()
+            if self._pending_phase is not None:
+                target = self._pending_phase
+                if target is Phase.WALK:
+                    self._activate_phase("pedestrian", "Admisión peatonal tras despeje del cruce.")
+                elif target is Phase.NS_GREEN:
+                    self._activate_phase("ns", "Fase Norte–Sur habilitada tras despeje.")
+                else:
+                    self._activate_phase("ew", "Fase Oriente–Occidente habilitada tras despeje.")
+            else:
+                self._choose_phase()
             return
         if self.phase is Phase.WALK and self.phase_time >= self.config.walk_admission:
             self.phase = Phase.WALK_CLEARANCE
@@ -354,12 +584,26 @@ class Simulation:
         ):
             self._choose_phase()
 
+    @staticmethod
+    def _axis_name(axis: str) -> str:
+        return "Norte–Sur" if axis == "ns" else "Oriente–Occidente"
+
     def load_scenario(self, scenario: Scenario) -> None:
         self.reset()
-        if scenario is Scenario.NORTH_SOUTH:
+        if scenario is Scenario.BALANCED:
+            self.vehicle_rates = dict.fromkeys(Access, 12.0)
+            self.pedestrian_rate = 2.4
+        elif scenario is Scenario.PEDESTRIANS:
+            self.vehicle_rates = dict.fromkeys(Access, 4.0)
+            self.pedestrian_rate = 12.0
+        elif scenario is Scenario.NORTH_SOUTH:
+            self.vehicle_rates = dict.fromkeys(Access, 3.0)
+            self.vehicle_rates[Access.NORTH] = self.vehicle_rates[Access.SOUTH] = 18.0
             for a in (Access.NORTH, Access.SOUTH):
                 self.add_vehicle(a)
         elif scenario is Scenario.EAST_WEST:
+            self.vehicle_rates = dict.fromkeys(Access, 3.0)
+            self.vehicle_rates[Access.EAST] = self.vehicle_rates[Access.WEST] = 18.0
             for a in (Access.EAST, Access.WEST):
                 self.add_vehicle(a)
         elif scenario is Scenario.ALL_ACCESS:
