@@ -218,3 +218,62 @@ de entidades, luces y métricas tomó aproximadamente 1,8 segundos de CPU/tiempo
 transcurrido en esta máquina (55 vehículos y 7 peatones al finalizar); no es una
 medición de FPS ni una revisión humana continua del movimiento. Los tamaños y
 prestaciones son didácticos, no una calibración de vehículos reales.
+
+
+## Percepción simulada y placas sintéticas
+
+**Sensores** despliega estado y última lectura de las cuatro cámaras virtuales,
+ocupación actual, cola (velocidad ≤ 0,5 unidades/s), tipos observados y paso histórico.
+La lectura es configurable entre 0,05 y 1 segundo simulado. La casilla de cobertura
+muestra zonas turquesa y líneas de paso magenta; no son imágenes de una cámara real.
+Cada sensor cubre los dos carriles de entrada de su acceso, desde posición longitudinal
+0 a 270; la línea de conteo está en 250. La salida del área de cobertura elimina la
+detección activa en la lectura siguiente. La demanda excluye entidades que ya cruzan
+o salen y no se confunde con el acumulado histórico de pasos. El seguimiento público
+usa identificadores propios de cámara, distintos del identificador del mundo.
+
+`domain/perception.py` define `ObservationSource`, `ObservationBatch`, `Detection`,
+`SensorStatus` y `TrafficSummary`. El adaptador `SimulatedObservationSource` obtiene
+observaciones de entidades internas, filtradas por cobertura y frecuencia. No ejecuta
+clasificación de píxeles, OCR ni reconocimiento real de imágenes. La fuente define
+también observaciones de espera peatonal. El controlador consulta demanda, espera y
+estado a través del contrato; las entidades completas se conservan para movimiento,
+distancias y protección del cruce. Esas protecciones son capacidades del simulador,
+no de las cámaras. Las llegadas diferidas fuera del mundo visible no son detecciones.
+
+**Sin datos no significa vacío.** Si falta una de las cuatro lecturas, su estado es
+sin datos/desconectado, o la antigüedad supera 1 segundo simulado, se solicita amarillo
+y luego rojo; no se habilita otra fase hasta recuperar las observaciones válidas.
+Quienes están comprometidos terminan de salir y los peatones siguen protegidos por
+el estado del mundo. Las últimas lecturas se conservan hasta la siguiente muestra,
+no indefinidamente como demanda válida. Pausar detiene el reloj, el movimiento y las
+lecturas; reiniciar limpia seguimientos, contadores y registro de placas.
+
+Una futura fuente de imágenes implementará el mismo contrato, entregando detecciones,
+seguimientos, tiempos y disponibilidad. Puede usar tipo desconocido y confianza
+opcional; el contrato admite `confidence=None`. Debe aportar su propia lectura de
+peatones. El argumento de mundo del adaptador simulado puede ignorarse en una fuente
+externa. No se incorporan dependencias de visión ni hardware en esta etapa.
+
+`domain/catalog.py` es el catálogo Python local, ampliable y validado: identificador
+de modelo, tipo, marca/modelo ficticios, dimensiones, prestaciones y variante gráfica.
+No es un conjunto de entrenamiento. Al seleccionar un vehículo, **Datos del escenario**
+muestra tipo, marca, modelo y placa; la detección actual aparece separada. El detector
+no deduce marca o modelo de una imagen.
+
+`PlateService` genera identificadores ficticios de formato colombiano: `ABC123` para
+vehículos de cuatro ruedas y `ABC12D` para motos. No corresponden necesariamente a
+vehículos registrados. El registro de sesión impide reutilizarlos incluso después
+de salir de escena, y una semilla reproduce la secuencia. Incorporación manual,
+llegadas automáticas y escenarios usan el mismo servicio. Reiniciar puede reutilizar
+la secuencia porque empieza una sesión nueva. Las placas están en los datos del
+vehículo, en amarillo/negro cuando la escala lo permite y completas en la selección.
+El sensor las etiqueta **Lectura simulada**. Un sistema externo necesitará un módulo
+independiente de lectura de placas; detectar, contar y seguir no depende de leerlas.
+
+![Cobertura de cámaras virtuales y panel de sensores](docs/simulated-perception.png)
+
+Se verificó arranque y cierre con Qt `windows`, avance mediante temporizador nativo,
+pausa, selección con placa completa y detección diferenciada, reinicio y cambio de
+tamaño/zoom mediante controles programáticos. La captura se revisó visualmente;
+no se afirma una revisión humana continua del movimiento ni validación de cámaras reales.

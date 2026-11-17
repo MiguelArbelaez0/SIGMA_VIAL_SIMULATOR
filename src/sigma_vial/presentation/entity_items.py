@@ -18,6 +18,8 @@ class VehicleGraphicsItem(QGraphicsObject):
         kind: VehicleType = VehicleType.COMPACT,
     ) -> None:
         super().__init__()
+        self.plate = ""
+        self.setFlag(self.GraphicsItemFlag.ItemIsSelectable)
         self.kind = kind
         self.length, self.width = length, width
         self.color = QColor(self.COLORS[color_index % len(self.COLORS)])
@@ -69,6 +71,16 @@ class VehicleGraphicsItem(QGraphicsObject):
             painter.setPen(QPen(QColor(color), 2))
             for y in (-width * 0.3, width * 0.3):
                 painter.drawPoint(int(x), int(y))
+        if self.length >= 28:
+            painter.setPen(QPen(QColor("#292112"), 0.5))
+            painter.setBrush(QColor("#ffdb35"))
+            painter.drawRect(QRectF(-self.length / 2 + 1, -4, 4, 8))
+            if self.plate and painter.transform().m11() ** 2 + painter.transform().m12() ** 2 > 4:
+                font = painter.font()
+                font.setPixelSize(5)
+                painter.setFont(font)
+                painter.setPen(QColor("#000000"))
+                painter.drawText(QRectF(-14, -3, 28, 6), Qt.AlignmentFlag.AlignCenter, self.plate)
 
 
 class PedestrianGraphicsItem(QGraphicsObject):

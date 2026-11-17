@@ -2,6 +2,7 @@
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFrame,
@@ -62,7 +63,8 @@ class MainWindow(QMainWindow):
                 border-radius: 8px; padding: 11px; font-size: 13px; font-weight: 600; }
             QToolButton { color: #1a477f; background: #f5f8fc; border: 1px solid #d6e0ec;
                 padding: 9px; border-radius: 7px; text-align: left; font-weight: 600; }
-            QComboBox, QDoubleSpinBox { color: #20334d; background: white;
+            QComboBox,
+    QCheckBox, QDoubleSpinBox { color: #20334d; background: white;
                 border: 1px solid #c5d9f3; padding: 5px 8px; border-radius: 6px;
                 min-height: 24px; }
             QComboBox::drop-down { border: none; width: 22px; }
@@ -96,6 +98,9 @@ class MainWindow(QMainWindow):
         self.has_started = False
         self.intersection_scene = IntersectionScene(self, geometry)
         self.intersection_view = IntersectionView(self.intersection_scene)
+        self.intersection_scene.selectionChanged.connect(self._show_vehicle_details)
+        self.coverage_items = []
+        self._create_sensor_overlays()
         self.vehicle_items = {}
         self.pedestrian_items = {}
         body = QHBoxLayout()
@@ -178,6 +183,11 @@ class MainWindow(QMainWindow):
                 item.setZValue(15)
                 self.intersection_scene.addItem(item)
                 self.vehicle_items[vehicle.identifier] = item
+            item.plate = vehicle.plate
+            item.setToolTip(
+                f"Datos del escenario · {vehicle.plate} · {vehicle.kind.value[0]} "
+                f"· {vehicle.brand} {vehicle.model}"
+            )
             distance = vehicle.position
             lane = -self.intersection_scene.geometry.lane_width * (0.5 + vehicle.lane)
             extent = self.simulation.config.approach_extent
@@ -227,6 +237,29 @@ class MainWindow(QMainWindow):
 
     def _refresh_simulation(self) -> None:
         sim = self.simulation
+        if hasattr(self, "sensor_status"):
+            batch = sim.observations()
+            lines = []
+            for access, summary in batch.traffic.items():
+                counts = {}
+                for detection in summary.detections:
+                    kind = VehicleType.__members__.get(detection.vehicle_type)
+                    name = kind.value[0] if kind else "Desconocido"
+                    counts[name] = counts.get(name, 0) + 1
+                status = (
+                    summary.status.value
+                    if sim.time - summary.observed_at <= sim.sensor_timeout
+                    else "Lectura vencida"
+                )
+                lines.append(
+                    f"{access.value}: {status} "
+                    f"· lectura {summary.observed_at:.1f} s · ocupación {len(summary.detections)} "
+                    f"· cola {summary.queue} · paso histórico {summary.passage_count} "
+                    f"· tipos {counts}"
+                )
+            self.sensor_status.setText(
+                "Detección simulada · umbral detenido ≤ 0,5 u/s\n" + "\n".join(lines)
+            )
         queue = " · ".join(f"{a.value}: {sim.waiting(a)}" for a in Access)
         crossing = sum(p.walking for p in sim.pedestrians)
         pedestrian_waits = [p.wait for p in sim.pedestrians if not p.walking]
@@ -254,6 +287,7 @@ class MainWindow(QMainWindow):
             f"Verde transcurrido: {sim.green_elapsed:.1f} s · Motivo: {sim.decision} · "
             f"Completados: {sim.completed_vehicles}"
         )
+        self._show_vehicle_details()
         self.start_button.setText(
             "Pausar" if sim.running else ("Reanudar" if self.has_started else "Iniciar")
         )
@@ -268,6 +302,7 @@ class MainWindow(QMainWindow):
     def _reset_simulation(self) -> None:
         self.simulation_timer.stop()
         self.simulation.reset()
+        self._set_sensor_interval(self.sensor_interval.value())
         self.has_started = False
         self._sync_signals()
         for item in (*self.vehicle_items.values(), *self.pedestrian_items.values()):
@@ -282,6 +317,7 @@ class MainWindow(QMainWindow):
     def _load_scenario(self) -> None:
         self.simulation_timer.stop()
         self.simulation.load_scenario(self.scenario_combo.currentData())
+        self._set_sensor_interval(self.sensor_interval.value())
         self._sync_entities()
         self._sync_signals()
         self.has_started = False
@@ -361,6 +397,33 @@ class MainWindow(QMainWindow):
         self.details_panel.setVisible(False)
         layout.addWidget(self.details_panel)
 
+        sensor_toggle = QToolButton()
+        sensor_toggle.setText("Sensores  ▸")
+        sensor_toggle.setCheckable(True)
+        self.sensor_panel = QWidget()
+        sensor_layout = QVBoxLayout(self.sensor_panel)
+        self.sensor_status = text_label("Cámaras virtuales · sin lectura", "muted")
+        sensor_layout.addWidget(self.sensor_status)
+        coverage = QCheckBox("Mostrar cobertura y líneas de conteo")
+        coverage.toggled.connect(
+            lambda checked: [item.setVisible(checked) for item in self.coverage_items]
+        )
+        sensor_layout.addWidget(coverage)
+        self.sensor_interval = QDoubleSpinBox()
+        self.sensor_interval.setRange(0.05, 1)
+        self.sensor_interval.setSingleStep(0.05)
+        self.sensor_interval.setValue(0.1)
+        self.sensor_interval.setSuffix(" s / lectura")
+        self.sensor_interval.valueChanged.connect(self._set_sensor_interval)
+        sensor_layout.addWidget(self.sensor_interval)
+        self.vehicle_details = text_label("Selecciona un vehículo para inspeccionarlo.", "muted")
+        sensor_layout.addWidget(self.vehicle_details)
+        self.sensor_panel.hide()
+        sensor_toggle.toggled.connect(
+            lambda checked: self._toggle_panel(sensor_toggle, self.sensor_panel, checked)
+        )
+        layout.addWidget(sensor_toggle)
+        layout.addWidget(self.sensor_panel)
         config_toggle = QToolButton()
         config_toggle.setText("Configuración y escenario  ▸")
         config_toggle.setCheckable(True)
@@ -453,3 +516,52 @@ class MainWindow(QMainWindow):
         button.setText(
             button.text().replace("▸", "▾") if expanded else button.text().replace("▾", "▸")
         )
+
+    def _set_sensor_interval(self, value):
+        for camera in self.simulation.observation_source.cameras.values():
+            camera.interval = value
+
+    def _create_sensor_overlays(self):
+        from PySide6.QtGui import QBrush, QColor, QPen
+
+        from sigma_vial.presentation.geometry import rotation
+
+        for access in Access:
+            zone = self.intersection_scene.addRect(
+                -116, -430, 116, 270, QPen(QColor("#279db1"), 2), QBrush(QColor(30, 170, 190, 35))
+            )
+            zone.setRotation(rotation(access))
+            zone.setZValue(2)
+            line = self.intersection_scene.addLine(-116, -180, 0, -180, QPen(QColor("#dd75bd"), 3))
+            line.setRotation(rotation(access))
+            line.setZValue(3)
+            for item in (zone, line):
+                item.hide()
+                self.coverage_items.append(item)
+
+    def _show_vehicle_details(self):
+        if not hasattr(self, "vehicle_details"):
+            return
+        selected = self.intersection_scene.selectedItems()
+        for vehicle in self.simulation.vehicles:
+            if self.vehicle_items.get(vehicle.identifier) in selected:
+                detections = [
+                    d
+                    for summary in self.simulation.observations().traffic.values()
+                    for d in summary.detections
+                ]
+                camera = self.simulation.observation_source.cameras[vehicle.access]
+                track_id = camera.track_for(vehicle.identifier)
+                detection = next((d for d in detections if d.track_id == track_id), None)
+                self.vehicle_details.setText(
+                    f"Datos del escenario: {vehicle.plate} · {vehicle.kind.value[0]} "
+                    f"· {vehicle.brand} · {vehicle.model}\n"
+                    + (
+                        f"Detección simulada: {detection.track_id} · {detection.state} "
+                        f"· Lectura simulada: {detection.plate}"
+                        if detection
+                        else "Sin detección activa en cobertura."
+                    )
+                )
+                return
+        self.vehicle_details.setText("Selecciona un vehículo para inspeccionarlo.")

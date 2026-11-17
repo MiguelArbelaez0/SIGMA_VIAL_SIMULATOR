@@ -5,6 +5,9 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 
+from sigma_vial.domain.catalog import CATALOG, VehicleType
+from sigma_vial.domain.perception import ObservationSource, SensorStatus, SimulatedObservationSource
+from sigma_vial.domain.plates import PlateService
 from sigma_vial.domain.scenario import Access, SignalState
 
 
@@ -77,17 +80,6 @@ class SimulationConfig:
         return self.approach_extent + self.intersection_half + self.vehicle_length / 2
 
 
-class VehicleType(Enum):
-    MOTORCYCLE = ("Moto", 20, 9, 115, 48, 115)
-    COMPACT = ("Automóvil pequeño", 28, 16, 110, 38, 110)
-    SEDAN = ("Sedán", 34, 18, 110, 36, 105)
-    SUV = ("Camioneta / SUV", 39, 21, 100, 30, 100)
-    VAN = ("Furgoneta", 44, 22, 95, 26, 95)
-    BUS = ("Bus", 70, 25, 80, 18, 80)
-    TRUCK = ("Camión pequeño", 54, 24, 85, 22, 85)
-    LARGE_TRUCK = ("Camión grande", 88, 26, 75, 15, 75)
-
-
 @dataclass
 class Vehicle:
     identifier: int
@@ -100,6 +92,10 @@ class Vehicle:
     committed: bool = False
     speed: float = 0
     kind: VehicleType = VehicleType.COMPACT
+    plate: str = ""
+    model_id: str = ""
+    brand: str = "SIGMA ficticia"
+    model: str = ""
 
     @property
     def length(self) -> float:
@@ -140,6 +136,8 @@ class Simulation:
     _rng: random.Random = field(init=False, repr=False)
     vehicle_mix: tuple[float, ...] = (12, 30, 25, 15, 8, 4, 4, 2)
     selected_vehicle_type: VehicleType | None = VehicleType.COMPACT
+    observation_source: ObservationSource = field(default_factory=SimulatedObservationSource)
+    sensor_timeout: float = 1.0
     _next_id: int = 0
     _empty_time: float = 0
     _opposing_advantage_time: float = 0
@@ -151,6 +149,7 @@ class Simulation:
     _pedestrian_due: float = 0
 
     def __post_init__(self) -> None:
+        self.plates = PlateService(self.seed)
         self._rng = random.Random(self.seed)
         self._arrival_due = dict.fromkeys(Access, 0.0)
 
@@ -194,7 +193,18 @@ class Simulation:
                 or queue[0].position >= (queue[0].length + length) / 2 + self.config.body_gap
             ):
                 self._next_id += 1
-                self.vehicles.append(Vehicle(self._next_id, access, lane, kind=kind))
+                self.vehicles.append(
+                    Vehicle(
+                        self._next_id,
+                        access,
+                        lane,
+                        kind=kind,
+                        plate=self.plates.issue(kind is VehicleType.MOTORCYCLE),
+                        model_id=CATALOG[kind].model_id,
+                        brand=CATALOG[kind].brand,
+                        model=CATALOG[kind].model,
+                    )
+                )
                 return True
         return False
 
@@ -249,16 +259,24 @@ class Simulation:
             return self.phase_time
         return self._last_green_elapsed
 
+    def observations(self):
+        return self.observation_source.read(self.time, self.vehicles, self.pedestrians)
+
     def axis_demand(self, axis: str) -> int:
-        return self.pending_demand(self._axis_accesses(axis))
+        batch = self.observations()
+        return sum(
+            summary.demand
+            for access, summary in batch.traffic.items()
+            if access in self._axis_accesses(axis)
+        )
 
     def axis_wait(self, axis: str) -> float:
-        accesses = self._axis_accesses(axis)
+        batch = self.observations()
         return max(
             (
-                v.wait
-                for v in self.vehicles
-                if v.access in accesses and not v.inside and not v.exiting
+                summary.max_wait
+                for access, summary in batch.traffic.items()
+                if access in self._axis_accesses(axis)
             ),
             default=0,
         )
@@ -268,7 +286,7 @@ class Simulation:
         return (Access.NORTH, Access.SOUTH) if axis == "ns" else (Access.EAST, Access.WEST)
 
     def pedestrian_waiting(self) -> int:
-        return sum(not p.walking for p in self.pedestrians)
+        return len(self.observations().pedestrian_waits)
 
     def _demand(self, accesses: tuple[Access, ...]) -> bool:
         return any(self.waiting(a) for a in accesses)
@@ -292,7 +310,7 @@ class Simulation:
 
     def _choose_phase(self) -> None:
         ns_demand, ew_demand = self.axis_demand("ns"), self.axis_demand("ew")
-        p_wait = max((p.wait for p in self.pedestrians if not p.walking), default=0)
+        p_wait = max(self.observations().pedestrian_waits, default=0)
         ns_wait, ew_wait = self.axis_wait("ns"), self.axis_wait("ew")
         pedestrian_waiting = self.pedestrian_waiting() > 0
         if pedestrian_waiting and p_wait >= self.config.max_pedestrian_wait:
@@ -506,9 +524,31 @@ class Simulation:
                     person.walking = True
 
     def _control(self, dt: float) -> None:
-        ns, ew = (Access.NORTH, Access.SOUTH), (Access.EAST, Access.WEST)
+        batch = self.observations()
+        healthy = (
+            all(
+                s.status is SensorStatus.AVAILABLE
+                and self.time - s.observed_at <= self.sensor_timeout
+                for s in batch.traffic.values()
+            )
+            and set(batch.traffic) == set(Access)
+            and self.time - batch.observed_at <= self.sensor_timeout
+        )
+        if not healthy:
+            if self.phase in (Phase.NS_GREEN, Phase.EW_GREEN):
+                self._request_phase_change("ns", "Sensor sin datos; cierre preventivo.")
+                self._pending_phase = None
+            elif (
+                self.phase in (Phase.NS_YELLOW, Phase.EW_YELLOW)
+                and self.phase_time >= self.config.yellow
+            ):
+                self._finish_phase("Sensores no disponibles; todos en rojo.")
+            self.decision = (
+                "Respaldo: observación ausente o vencida; se retienen nuevas admisiones."
+            )
+            return
         if self.phase is Phase.IDLE:
-            if self._demand(ns + ew) or self.pedestrian_waiting():
+            if self.axis_demand("ns") or self.axis_demand("ew") or self.pedestrian_waiting():
                 self._choose_phase()
             return
         if self.phase in (Phase.NS_GREEN, Phase.EW_GREEN):
@@ -524,9 +564,7 @@ class Simulation:
                 return
 
             waiting_pedestrians = self.pedestrian_waiting()
-            oldest_pedestrian_wait = max(
-                (p.wait for p in self.pedestrians if not p.walking), default=0
-            )
+            oldest_pedestrian_wait = max(self.observations().pedestrian_waits, default=0)
             pedestrian_priority = waiting_pedestrians >= 2 or (
                 waiting_pedestrians > 0
                 and oldest_pedestrian_wait >= self.config.max_pedestrian_wait
