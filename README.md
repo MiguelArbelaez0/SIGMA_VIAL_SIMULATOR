@@ -1,8 +1,7 @@
 # SIGMA VIAL
 
 Aplicación de escritorio de **SIGMA SOFTWARE SOLUTIONS** para una futura simulación
-vial virtual. Estado actual: entorno de desarrollo e interfaz vectorial de la
-intersección ejecutable. La simulación de tráfico todavía está pendiente.
+vial virtual. Estado actual: entorno, interfaz vectorial y primera simulación virtual local ejecutable.
 
 ## Preparación en Windows / PowerShell
 
@@ -72,12 +71,19 @@ La resolución de paquetes y las pruebas locales complementan esa comprobación.
 Las pruebas comprueban textos, construcción, apertura, cambio de tamaño y cierre,
 cuatro accesos, 16 carriles, sentidos de las flechas realmente dibujadas, cuatro
 semáforos inicialmente rojos, colores renderizados por estado y controles de zoom.
-También verifican que los semáforos y rótulos no invadan las calzadas.
+También verifican pausado, reanudación, reinicio, velocidad, sincronización de
+entidades, escenarios, separación de cola, salida bloqueada, despeje y que los
+semáforos y rótulos no invadan las calzadas.
 Las importaciones se prueban en procesos independientes con tiempo límite, sin
 crear una QApplication. pytest-qt administra su propia aplicación y no deja un
 bucle gráfico bloqueado. En equipos sin pantalla se puede establecer temporalmente
 `$env:QT_QPA_PLATFORM = 'offscreen'`; eso no constituye verificación visual.
 Retirar esa variable con `Remove-Item Env:QT_QPA_PLATFORM` antes de abrir la ventana.
+En Windows, el control de zoom automatizado prueba la vista sin mostrar otra ventana
+nativa durante el ciclo de eventos de pytest. Mostrar la vista en esa prueba producía
+`Windows fatal exception: 0x8001010d` en `pytestqt.plugin._process_events`; el proceso
+seguía reportando pruebas aprobadas. La prueba conserva las comprobaciones de zoom y
+encuadre, y la apertura nativa se valida por separado ejecutando la aplicación normal.
 
 ## Organización
 
@@ -92,10 +98,10 @@ Retirar esa variable con `Remove-Item Env:QT_QPA_PLATFORM` antes de abrir la ven
 - `src/sigma_vial/__main__.py`: ejecución mediante `python -m sigma_vial`.
 - `tests/`: pruebas automáticas y contratos de importación.
 
-Los paquetes de aplicación e infraestructura siguen mínimos y documentados. La ventana
-no contiene reglas de tráfico y los módulos no arrancan la interfaz al importarse.
+El motor determinista está en `src/sigma_vial/domain/simulation.py`; la ventana
+coordina el temporizador y dibuja entidades desde el estado del motor.
 
-## Alcance previsto y pendientes
+## Simulación funcional
 
 Intersección ficticia en “+” con accesos norte, sur, oriente y occidente; cada acceso
 tendrá un semáforo vehicular, dos carriles de entrada y dos de salida. Se prevén
@@ -123,24 +129,37 @@ Implementado en esta etapa:
 - Gráficos vectoriales locales con QGraphicsScene/QGraphicsView. La aplicación
   instalada funciona sin internet y no depende de la captura para dibujar el cruce.
 
-Pendiente: vehículos y peatones animados, reloj de simulación, generación de demanda,
-inicio/pausa/reinicio, métricas y reportes, transiciones semafóricas y control adaptativo.
-No hay resultados inventados ni controles de simulación todavía inexistentes.
+La simulación implementa avance determinista con pasos de 0,05 s, semilla configurable,
+cuatro colas de acceso, demanda por acceso, velocidad global, peatones y fases de
+admisión/despeje. El control selecciona por espera, reserva demanda que alcance el
+límite académico de 45 s, atiende la prioridad de dos peatones después del verde
+mínimo, considera cuatro segundos de carril activo vacío y limita el verde a 32 s
+cuando hay demanda. Parámetros (verde mínimo 8 s, amarillo 3 s, despeje 2 s,
+admisión peatonal 8 s) son supuestos didácticos, no tiempos certificados para una vía.
+Los vehículos mantienen separación, se detienen antes de la línea y siguen dentro
+hasta que su parte trasera despeja el cruce. Una salida bloqueada mantiene el vehículo
+antes de entrar y puede liberarse desde el motor.
+
+La interfaz incluye iniciar, pausar/reanudar, reiniciar conservando tasas de demanda,
+ritmo 0,5×/1×/2×/4×, demanda en vehículos/minuto y peatones/minuto, incorporación
+manual y ocho escenarios reproducibles detenidos. Dibujos, luces y métricas proceden
+del motor. Acercar, alejar y restablecer vista son independientes del reloj simulado.
+
+Parámetros pendientes de mayor validación: restricciones reales de capacidad de las
+salidas por carril, geometría individual de los cuatro cruces peatonales, calibración
+de velocidades y políticas de espera bajo obstrucciones prolongadas. La demostración
+no representa seguridad vial certificada. Hardware ESP32 y semáforos físicos siguen
+fuera de alcance.
 No utiliza cámaras, IA, nube, bases de datos ni hardware. ESP32 y semáforos físicos
 se considerarán en una etapa posterior.
 
 ## Ramas y próxima etapa
 
 La preparación del entorno está en el commit `5806bd6`
-(`setup/development-environment`). Esta interfaz se desarrolla en
-`feature/intersection-ui`, creada directamente desde ese commit verificado,
-aunque `main` no exista. No se modifica la rama base ni se ejecutan commits, push o
-merge automáticamente; los cambios se dejan para revisión.
+(`setup/development-environment`). La interfaz se desarrolló en `feature/intersection-ui`; la simulación funcional se
+desarrolla en `feature/functional-simulation`.
 
-Próxima etapa: `feature/traffic-simulation`. Después:
-`feature/adaptive-control`, `feature/simulation-controls` y
-`feature/hardware-integration`. Estas ramas futuras no se crean ahora. Cada una
-deberá partir de una base que incluya los cambios anteriores revisados e integrados.
+Siguiente etapa: integración física, cuando la simulación local quede revisada e integrada.
 
 ## Revisión de la interfaz
 
