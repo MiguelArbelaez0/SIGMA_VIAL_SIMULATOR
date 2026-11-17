@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from sigma_vial.domain.scenario import Access
-from sigma_vial.domain.simulation import Scenario, Simulation, SimulationConfig
+from sigma_vial.domain.simulation import Phase, Scenario, Simulation, SimulationConfig, VehicleType
 from sigma_vial.presentation.entity_items import PedestrianGraphicsItem, VehicleGraphicsItem
 from sigma_vial.presentation.geometry import IntersectionGeometry
 from sigma_vial.presentation.intersection_scene import IntersectionScene
@@ -146,6 +146,9 @@ class MainWindow(QMainWindow):
         self._refresh_simulation()
 
     def _sync_signals(self) -> None:
+        for indicator in self.intersection_scene.pedestrian_signals.values():
+            indicator.admission = self.simulation.phase is Phase.WALK
+            indicator.update()
         colors = {"Rojo": "#a6283b", "Amarillo": "#a56800", "Verde": "#17804b"}
         backgrounds = {"Rojo": "#fff0f2", "Amarillo": "#fff7df", "Verde": "#e8f8ef"}
         for access, state in self.simulation.signals.items():
@@ -164,7 +167,9 @@ class MainWindow(QMainWindow):
         for vehicle in self.simulation.vehicles:
             item = self.vehicle_items.get(vehicle.identifier)
             if item is None:
-                item = VehicleGraphicsItem(vehicle.identifier)
+                item = VehicleGraphicsItem(
+                    vehicle.identifier, vehicle.length, vehicle.width, vehicle.kind
+                )
                 item.setRotation(
                     {Access.NORTH: 90, Access.SOUTH: 270, Access.EAST: 180, Access.WEST: 0}[
                         vehicle.access
@@ -193,12 +198,24 @@ class MainWindow(QMainWindow):
                 item = PedestrianGraphicsItem()
                 self.intersection_scene.addItem(item)
                 self.pedestrian_items[person.identifier] = item
+            item.walking = person.walking
+            item.update()
             item.setPos(*self._pedestrian_position(person))
 
     def _pedestrian_position(self, person) -> tuple[float, float]:
         geometry = self.intersection_scene.geometry
-        progress = person.position - geometry.road_half_width
-        offset = person.lane
+        if not person.walking:
+            waiting = [
+                p
+                for p in self.simulation.pedestrians
+                if p.crossing is person.crossing and not p.walking
+            ]
+            index = waiting.index(person)
+            progress = -geometry.road_half_width - 8 - (index % 2) * 14
+            offset = 4 + (index // 2) * 15
+        else:
+            progress = person.position - geometry.road_half_width
+            offset = person.lane
         near = geometry.crossing_near
         if person.crossing is Access.NORTH:
             return progress, -near - offset
@@ -364,6 +381,31 @@ class MainWindow(QMainWindow):
         scenario_button.clicked.connect(self._load_scenario)
         config_layout.addWidget(scenario_button)
         config_layout.addWidget(text_label("Demanda · vehículos por minuto", "muted"))
+        self.vehicle_type = QComboBox()
+        self.vehicle_type.addItem("Aleatorio", None)
+        for kind in VehicleType:
+            self.vehicle_type.addItem(kind.value[0], kind)
+        self.vehicle_type.currentIndexChanged.connect(
+            lambda: setattr(
+                self.simulation, "selected_vehicle_type", self.vehicle_type.currentData()
+            )
+        )
+        self.simulation.selected_vehicle_type = None
+        config_layout.addWidget(self.vehicle_type)
+        config_layout.addWidget(text_label("Buses y camiones en mezcla aleatoria", "muted"))
+        self.heavy_share = QDoubleSpinBox()
+        self.heavy_share.setRange(0, 100)
+        self.heavy_share.setSuffix(" %")
+        self.heavy_share.setValue(10)
+        self.heavy_share.valueChanged.connect(
+            lambda value: setattr(
+                self.simulation,
+                "vehicle_mix",
+                tuple((100 - value) * weight / 90 for weight in (12, 30, 25, 15, 8))
+                + (value * 0.4, value * 0.4, value * 0.2),
+            )
+        )
+        config_layout.addWidget(self.heavy_share)
         self.demand_controls = {}
         for access in Access:
             row = QHBoxLayout()

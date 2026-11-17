@@ -47,7 +47,11 @@ class TrafficLightItem(QGraphicsObject):
     ) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(QPen(QColor("#62748b"), 1.5))
-        painter.setBrush(QColor("#142237"))
+        painter.setPen(QPen(QColor("#64758a"), 5))
+        painter.drawLine(0, 38, 0, -58)
+        painter.drawLine(-48, -58, 0, -58)
+        painter.setPen(QPen(QColor("#142237"), 7))
+        painter.setBrush(QColor("#f4bd32"))
         painter.drawRoundedRect(QRectF(-23, -64, 46, 106), 10, 10)
         for index, lamp in enumerate(SignalState):
             painter.setPen(QPen(QColor("#0b1422"), 2))
@@ -58,6 +62,9 @@ class TrafficLightItem(QGraphicsObject):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawEllipse(QRectF(-16, -58 + index * 32, 32, 32))
 
+        painter.setPen(QPen(QColor("#162536"), 3))
+        for y in (-55, -23, 9):
+            painter.drawArc(QRectF(-15, y - 3, 30, 16), 0, 180 * 16)
         painter.setPen(QColor("#20334d"))
         font = QFont("Segoe UI")
         font.setPixelSize(21)

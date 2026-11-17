@@ -55,6 +55,7 @@ class SimulationConfig:
     lane_length: float = 860
     intersection_half: float = 186
     pedestrian_crossing_length: float = 232
+    body_gap: float = 8
     vehicle_length: float = 28
     demand_switch_margin: int = 1
     demand_persistence: float = 1
@@ -76,6 +77,17 @@ class SimulationConfig:
         return self.approach_extent + self.intersection_half + self.vehicle_length / 2
 
 
+class VehicleType(Enum):
+    MOTORCYCLE = ("Moto", 20, 9, 115, 48, 115)
+    COMPACT = ("Automóvil pequeño", 28, 16, 110, 38, 110)
+    SEDAN = ("Sedán", 34, 18, 110, 36, 105)
+    SUV = ("Camioneta / SUV", 39, 21, 100, 30, 100)
+    VAN = ("Furgoneta", 44, 22, 95, 26, 95)
+    BUS = ("Bus", 70, 25, 80, 18, 80)
+    TRUCK = ("Camión pequeño", 54, 24, 85, 22, 85)
+    LARGE_TRUCK = ("Camión grande", 88, 26, 75, 15, 75)
+
+
 @dataclass
 class Vehicle:
     identifier: int
@@ -87,6 +99,15 @@ class Vehicle:
     exiting: bool = False
     committed: bool = False
     speed: float = 0
+    kind: VehicleType = VehicleType.COMPACT
+
+    @property
+    def length(self) -> float:
+        return self.kind.value[1]
+
+    @property
+    def width(self) -> float:
+        return self.kind.value[2]
 
 
 @dataclass
@@ -117,6 +138,8 @@ class Simulation:
     blocked_exits: set[Access] = field(default_factory=set)
     running: bool = False
     _rng: random.Random = field(init=False, repr=False)
+    vehicle_mix: tuple[float, ...] = (12, 30, 25, 15, 8, 4, 4, 2)
+    selected_vehicle_type: VehicleType | None = VehicleType.COMPACT
     _next_id: int = 0
     _empty_time: float = 0
     _opposing_advantage_time: float = 0
@@ -159,11 +182,19 @@ class Simulation:
         return False
 
     def _try_add_vehicle(self, access: Access) -> bool:
+        kind = (
+            self.selected_vehicle_type
+            or self._rng.choices(tuple(VehicleType), weights=self.vehicle_mix, k=1)[0]
+        )
+        length = kind.value[1]
         for lane in range(2):
             queue = self.lane_vehicles(access, lane)
-            if not queue or queue[0].position >= self.config.spawn_gap:
+            if (
+                not queue
+                or queue[0].position >= (queue[0].length + length) / 2 + self.config.body_gap
+            ):
                 self._next_id += 1
-                self.vehicles.append(Vehicle(self._next_id, access, lane))
+                self.vehicles.append(Vehicle(self._next_id, access, lane, kind=kind))
                 return True
         return False
 
@@ -361,20 +392,36 @@ class Simulation:
         self._control(dt)
 
     def _move_vehicles(self, dt: float) -> None:
-        stop_position = self.config.stop_position
-        conflict_exit = self.config.conflict_exit
-        exit_position = self.config.lane_length + self.config.vehicle_length / 2
         for access in Access:
             for lane in range(2):
                 queue = self.lane_vehicles(access, lane)
                 for index in range(len(queue) - 1, -1, -1):
                     vehicle = queue[index]
+                    stop_position = (
+                        self.config.stop_position
+                        + (self.config.vehicle_length - vehicle.length) / 2
+                    )
+                    conflict_exit = (
+                        self.config.conflict_exit
+                        + (vehicle.length - self.config.vehicle_length) / 2
+                    )
+                    exit_position = self.config.lane_length + vehicle.length / 2
+                    vmax = min(self.config.vehicle_speed, vehicle.kind.value[3])
+                    acceleration = min(self.config.vehicle_acceleration, vehicle.kind.value[4])
+                    braking = min(self.config.vehicle_braking, vehicle.kind.value[5])
+                    leader_limit = (
+                        queue[index + 1].position
+                        - (queue[index + 1].length + vehicle.length) / 2
+                        - self.config.body_gap
+                        if index < len(queue) - 1
+                        else float("inf")
+                    )
                     if vehicle.inside or vehicle.exiting:
                         vehicle.speed = min(
-                            self.config.vehicle_speed,
-                            vehicle.speed + self.config.vehicle_acceleration * dt,
+                            vmax,
+                            vehicle.speed + acceleration * dt,
                         )
-                        vehicle.position += vehicle.speed * dt
+                        vehicle.position = min(leader_limit, vehicle.position + vehicle.speed * dt)
                         if vehicle.inside and vehicle.position >= conflict_exit:
                             vehicle.inside = False
                             vehicle.exiting = True
@@ -386,15 +433,16 @@ class Simulation:
                     limit = (
                         stop_position
                         if index == len(queue) - 1
-                        else queue[index + 1].position - self.config.spawn_gap
+                        else queue[index + 1].position
+                        - (queue[index + 1].length + vehicle.length) / 2
+                        - self.config.body_gap
                     )
                     target = max(vehicle.position, min(limit, stop_position))
                     signal = self.signals[access]
                     yellow_committed = (
                         signal is SignalState.YELLOW
                         and vehicle.speed > 0.5
-                        and vehicle.position
-                        >= stop_position - vehicle.speed**2 / (2 * self.config.vehicle_braking)
+                        and vehicle.position >= stop_position - vehicle.speed**2 / (2 * braking)
                     )
                     vehicle.committed = vehicle.committed or yellow_committed
                     permitted = (
@@ -403,7 +451,15 @@ class Simulation:
                         and access not in self.blocked_exits
                         and not (self.blocked_exit and not self.blocked_exits)
                     )
-                    if permitted and vehicle.position >= stop_position:
+                    exit_capacity = self.config.lane_length - (
+                        self.config.approach_extent + self.config.intersection_half
+                    )
+                    permitted = permitted and exit_capacity >= vehicle.length + self.config.body_gap
+                    if (
+                        permitted
+                        and vehicle.position >= stop_position
+                        and leader_limit > vehicle.position
+                    ):
                         vehicle.inside = True
                         vehicle.committed = False
                         vehicle.wait = 0
@@ -411,25 +467,26 @@ class Simulation:
                             "ns" if access in (Access.NORTH, Access.SOUTH) else "ew"
                         )
                     else:
-                        target_speed = self.config.vehicle_speed
+                        target_speed = vmax
                         if not permitted:
                             distance = max(0.0, target - vehicle.position)
                             target_speed = min(
                                 target_speed,
-                                (2 * self.config.vehicle_braking * distance) ** 0.5,
+                                (2 * braking * distance) ** 0.5,
                             )
                         if index < len(queue) - 1:
                             leader = queue[index + 1]
-                            gap = leader.position - vehicle.position - self.config.spawn_gap
+                            gap = (
+                                leader.position
+                                - vehicle.position
+                                - (leader.length + vehicle.length) / 2
+                                - self.config.body_gap
+                            )
                             if gap <= 0:
                                 target_speed = 0
                             else:
                                 target_speed = min(target_speed, leader.speed + gap / dt)
-                        rate = (
-                            self.config.vehicle_acceleration
-                            if target_speed > vehicle.speed
-                            else self.config.vehicle_braking
-                        )
+                        rate = acceleration if target_speed > vehicle.speed else braking
                         if vehicle.speed < target_speed:
                             vehicle.speed = min(target_speed, vehicle.speed + rate * dt)
                         else:
@@ -629,8 +686,12 @@ class Simulation:
             self.set_exit_blocked(Access.NORTH, True)
 
     def reset(self) -> None:
+        selected_type = self.selected_vehicle_type
+        vehicle_mix = self.vehicle_mix
         config, seed = self.config, self.seed
         rates, pedestrian_rate = self.vehicle_rates.copy(), self.pedestrian_rate
         self.__dict__.update(Simulation(config=config, seed=seed).__dict__)
         self.vehicle_rates = rates
         self.pedestrian_rate = pedestrian_rate
+        self.selected_vehicle_type = selected_type
+        self.vehicle_mix = vehicle_mix

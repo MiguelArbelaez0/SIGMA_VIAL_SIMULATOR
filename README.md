@@ -181,3 +181,40 @@ La captura real de la ventana se guarda en
 [`docs/intersection-ui.png`](docs/intersection-ui.png).
 La revisión manual y los resultados de esta entrega están documentados en
 [`docs/validation-intersection-ui.md`](docs/validation-intersection-ui.md).
+
+
+## Tráfico mixto y presentación visual
+
+En **Configuración y escenario**, el selector permite **Aleatorio** o Moto,
+Automóvil pequeño, Sedán, Camioneta/SUV, Furgoneta, Bus, Camión pequeño y Camión
+grande. Afecta tanto a llegadas automáticas como a incorporaciones manuales.
+El porcentaje de buses y camiones ajusta la mezcla aleatoria (10 % inicialmente);
+los demás tipos mantienen sus proporciones relativas. Reiniciar conserva esta selección.
+Cada vehículo cuenta como una unidad de demanda, independientemente de su tamaño.
+
+Las longitudes van de 20 a 88 unidades y los anchos de 9 a 26, dentro de carriles
+de 58 unidades. El catálogo del dominio centraliza velocidad, aceleración y frenada.
+El dibujo recibe las mismas dimensiones: se calculan frente, parte trasera,
+separación entre carrocerías (8 unidades), espacio de aparición, capacidad mínima
+de salida y eliminación después de salir completamente. Los vehículos lentos
+siguen limitando a sus seguidores también dentro del cruce y en la salida.
+Las salidas bloqueadas siguen impidiendo nuevas entradas; no hay cambios de carril.
+
+Los cuatro semáforos vehiculares tienen carcasa amarilla, panel oscuro, viseras
+y soportes horizontales. Cuatro indicadores peatonales adicionales muestran una
+mano naranja al detenerse y una persona blanca exclusivamente durante admisión.
+Durante despeje no se permite iniciar; quienes cruzan terminan antes del verde
+vehicular. Los peatones en espera se distribuyen en la acera; el color turquesa
+identifica a quienes cruzan y el violeta a quienes esperan.
+
+![Tráfico mixto con dimensiones compartidas por motor y dibujo](docs/mixed-traffic.png)
+
+Validación de esta entrega: pruebas de filas mixtas, los ocho tipos en los cuatro
+accesos, capacidad de salida, despeje trasero del camión, dimensiones gráficas,
+indicadores, pausa y reinicio. Se ejecutó Qt con plataforma `windows`, se renderizó
+la captura, se ejercitaron zoom repetido y tamaños 1500×1000 y 800×600 mediante
+controles programáticos. Una medición de 120 segundos simulados con actualización
+de entidades, luces y métricas tomó aproximadamente 1,8 segundos de CPU/tiempo
+transcurrido en esta máquina (55 vehículos y 7 peatones al finalizar); no es una
+medición de FPS ni una revisión humana continua del movimiento. Los tamaños y
+prestaciones son didácticos, no una calibración de vehículos reales.

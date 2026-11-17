@@ -1,20 +1,30 @@
 """Vehículos y peatones vectoriales, ligeros y persistentes en la escena."""
 
-from PySide6.QtCore import QRectF
+from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsObject, QStyleOptionGraphicsItem, QWidget
+
+from sigma_vial.domain.simulation import VehicleType
 
 
 class VehicleGraphicsItem(QGraphicsObject):
     COLORS = ("#e66b4e", "#3d87cb", "#e5b84f", "#54a582", "#a574c8")
 
-    def __init__(self, color_index: int) -> None:
+    def __init__(
+        self,
+        color_index: int,
+        length: float = 28,
+        width: float = 16,
+        kind: VehicleType = VehicleType.COMPACT,
+    ) -> None:
         super().__init__()
+        self.kind = kind
+        self.length, self.width = length, width
         self.color = QColor(self.COLORS[color_index % len(self.COLORS)])
         self.setZValue(15)
 
     def boundingRect(self) -> QRectF:
-        return QRectF(-15, -9, 30, 18)
+        return QRectF(-self.length / 2 - 1, -self.width / 2 - 1, self.length + 2, self.width + 2)
 
     def paint(
         self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None
@@ -22,21 +32,49 @@ class VehicleGraphicsItem(QGraphicsObject):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(QPen(QColor("#26374a"), 1.2))
         painter.setBrush(self.color)
-        painter.drawRoundedRect(QRectF(-14, -8, 28, 16), 5, 5)
-        painter.setPen(QPen(QColor("#d8edfa"), 0.8))
+        painter.drawRoundedRect(
+            QRectF(-self.length / 2, -self.width / 2, self.length, self.width), 5, 5
+        )
+        length, width = self.length, self.width
+        painter.setPen(QPen(QColor("#162536"), 2))
+        for x in (-length * 0.30, length * 0.30):
+            for y in (-width / 2 + 1, width / 2 - 1):
+                painter.drawLine(int(x - 3), int(y), int(x + 3), int(y))
+        painter.setPen(QPen(QColor("#203c53"), 0.8))
         painter.setBrush(QColor("#b9d9e9"))
-        painter.drawRoundedRect(QRectF(-7, -6, 13, 12), 3, 3)
-        painter.setPen(QPen(QColor("#fff1bd"), 1.6))
-        painter.drawPoint(12, -4)
-        painter.drawPoint(12, 4)
-        painter.setPen(QPen(QColor("#f4f7fa"), 1.2))
-        painter.drawPoint(-12, -4)
-        painter.drawPoint(-12, 4)
+        if self.kind is VehicleType.MOTORCYCLE:
+            painter.setBrush(QColor("#253c56"))
+            painter.drawEllipse(QRectF(-4, -3, 8, 6))
+            painter.drawLine(int(length / 2 - 4), -4, int(length / 2 - 4), 4)
+        elif self.kind in (VehicleType.TRUCK, VehicleType.LARGE_TRUCK):
+            painter.setBrush(QColor("#b5c3cb"))
+            painter.drawRoundedRect(
+                QRectF(-length / 2 + 3, -width / 2 + 3, length * 0.65, width - 6), 2, 2
+            )
+            painter.setBrush(QColor("#b9d9e9"))
+            painter.drawRect(QRectF(length * 0.32, -width / 2 + 3, 5, width - 6))
+        elif self.kind is VehicleType.BUS:
+            for x in range(int(-length / 2 + 6), int(length / 2 - 5), 9):
+                painter.drawRect(QRectF(x, -width / 2 + 2, 6, 4))
+                painter.drawRect(QRectF(x, width / 2 - 6, 6, 4))
+            painter.drawRect(QRectF(length / 2 - 7, -width / 2 + 4, 4, width - 8))
+        else:
+            painter.drawRoundedRect(
+                QRectF(-length * 0.22, -width * 0.36, length * 0.45, width * 0.72), 2, 2
+            )
+            if self.kind is VehicleType.VAN:
+                painter.setBrush(self.color.darker(115))
+                painter.drawRect(QRectF(-length * 0.35, -width * 0.32, length * 0.36, width * 0.64))
+        for x, color in ((length / 2 - 2, "#fff1bd"), (-length / 2 + 2, "#ff7474")):
+            painter.setPen(QPen(QColor(color), 2))
+            for y in (-width * 0.3, width * 0.3):
+                painter.drawPoint(int(x), int(y))
 
 
 class PedestrianGraphicsItem(QGraphicsObject):
     def __init__(self) -> None:
         super().__init__()
+        self.walking = False
         self.setZValue(16)
 
     def boundingRect(self) -> QRectF:
@@ -49,7 +87,48 @@ class PedestrianGraphicsItem(QGraphicsObject):
         painter.setPen(QPen(QColor("#35234c"), 1))
         painter.setBrush(QColor("#f0c99c"))
         painter.drawEllipse(QRectF(-3, -6, 6, 6))
-        painter.setBrush(QColor("#7043aa"))
+        painter.setBrush(QColor("#087f86" if self.walking else "#8936ab"))
         painter.drawRoundedRect(QRectF(-4, 0, 8, 6), 2, 2)
+        painter.drawLine(-4, 1, -6, 4)
+        painter.drawLine(4, 1, 6, 4)
         painter.drawLine(-2, 5, -4, 7)
         painter.drawLine(2, 5, 4, 7)
+
+
+class PedestrianSignalItem(QGraphicsObject):
+    """Walk permission is distinct from the clearance of people already crossing."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.admission = False
+        self.setZValue(12)
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(-15, -19, 30, 38)
+
+    def paint(self, painter, option, widget=None) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor("#e5b432"), 2))
+        painter.setBrush(QColor("#162536"))
+        painter.drawRoundedRect(self.boundingRect().adjusted(1, 1, -1, -1), 4, 4)
+        painter.setPen(
+            QPen(
+                QColor("#ecfdf5" if self.admission else "#ff934c"),
+                3,
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.RoundCap,
+            )
+        )
+        if self.admission:
+            painter.drawEllipse(QRectF(-3, -12, 6, 6))
+            painter.drawLine(0, -4, 0, 5)
+            painter.drawLine(0, -2, -7, 3)
+            painter.drawLine(0, -2, 7, 1)
+            painter.drawLine(0, 5, -6, 13)
+            painter.drawLine(0, 5, 6, 13)
+        else:
+            for x in (-6, -2, 2, 6):
+                painter.drawLine(x, -10, x, 4)
+            painter.drawLine(-9, -1, -6, 9)
+            painter.drawLine(-6, 9, 5, 9)
+            painter.drawLine(5, 9, 6, 2)

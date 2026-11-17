@@ -18,7 +18,7 @@ def add_pavement(scene: QGraphicsScene, geometry: IntersectionGeometry) -> None:
     road.addRect(QRectF(-h, -extent, 2 * h, 2 * extent))
     horizontal = QPainterPath()
     horizontal.addRect(QRectF(-extent, -h, 2 * extent, 2 * h))
-    scene.addPath(road.united(horizontal), no_pen, QColor("#36465a"))
+    scene.addPath(road.united(horizontal), no_pen, QColor("#344353"))
 
     for access in Access:
         curb = QPainterPath()
@@ -26,7 +26,7 @@ def add_pavement(scene: QGraphicsScene, geometry: IntersectionGeometry) -> None:
         strip = QPainterPath()
         strip.addRect(QRectF(-extent, -h - sidewalk, extent - h, sidewalk))
         curbs = curb.united(strip)
-        item = scene.addPath(curbs, QPen(QColor("#b0c1cf"), 2), QColor("#d0dbe5"))
+        item = scene.addPath(curbs, QPen(QColor("#b0c1cf"), 2), QColor("#dce3e5"))
         item.setRotation(rotation(access))
 
 
