@@ -122,8 +122,8 @@ despeje separados. Implementado:
   el cruce; peatones vectoriales visibles en los pasos y aceras. El indicador de fase,
   colas, peatones y luces se actualiza desde el estado de la simulación.
 - Controles principales siempre visibles para iniciar, pausar/reanudar, reiniciar,
-  velocidad y vista. La configuración de demanda y escenarios está plegada al inicio;
-  las métricas detalladas también se pueden desplegar.
+  velocidad y vista. Las pestañas separan tráfico automático y altas manuales;
+  las métricas, sensores y demostraciones se despliegan aparte.
 - El escenario inicial equilibrado genera 12 vehículos/minuto por acceso y 2,4
   peatones/minuto. Las llegadas empiezan al pulsar Iniciar y pueden ajustarse.
 - Ajuste de escena al redimensionar, tamaño mínimo de ventana de 800 × 600 unidades
@@ -185,7 +185,7 @@ La revisión manual y los resultados de esta entrega están documentados en
 
 ## Tráfico mixto y presentación visual
 
-En **Configuración y escenario**, el selector permite **Aleatorio** o Moto,
+En **Tráfico automático**, el selector de tipos permite **Aleatorio** o Moto,
 Automóvil pequeño, Sedán, Camioneta/SUV, Furgoneta, Bus, Camión pequeño y Camión
 grande. Afecta tanto a llegadas automáticas como a incorporaciones manuales.
 El porcentaje de buses y camiones ajusta la mezcla aleatoria (10 % inicialmente);
@@ -277,3 +277,64 @@ Se verificó arranque y cierre con Qt `windows`, avance mediante temporizador na
 pausa, selección con placa completa y detección diferenciada, reinicio y cambio de
 tamaño/zoom mediante controles programáticos. La captura se revisó visualmente;
 no se afirma una revisión humana continua del movimiento ni validación de cámaras reales.
+
+
+## Generación automática e incorporación manual
+
+La barra fija encima del plano incluye **Iniciar / Pausar / Continuar**, **Reiniciar**,
+velocidad y estado. Zoom y restablecimiento están junto al plano. Cambiar de pestaña
+solo cambia el formulario visible: ambas fuentes de llegada pueden coexistir y el
+control semafórico sigue siendo automático, basado en sensores.
+
+**Tráfico automático** tiene un interruptor independiente y cinco perfiles. Elegir
+uno aplica inmediatamente las tasas a las llegadas futuras y a los campos, sin borrar
+entidades, modificar la fase ni reiniciar el reloj. Editar una tasa selecciona
+**Personalizado**. Las tasas son por acceso, no por carril.
+
+| Perfil | Norte | Sur | Oriente | Occidente | Peatones/min |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Equilibrado | 12 | 12 | 12 | 12 | 2,4 |
+| Mayor tráfico Norte–Sur | 18 | 18 | 3 | 3 | 2,4 |
+| Mayor tráfico Oriente–Occidente | 3 | 3 | 18 | 18 | 2,4 |
+| Más peatones | 4 | 4 | 4 | 4 | 12 |
+
+Las columnas vehiculares están en vehículos/minuto. El selector de tipos y el
+porcentaje de buses/camiones configuran exclusivamente las nuevas altas automáticas;
+la pestaña manual usa su propio selector. Los ajustes avanzados están plegados al
+inicio y explican la política de solicitudes.
+
+**Al apagar la generación**, se congelan los acumuladores de llegadas nuevas, tanto
+vehiculares como peatonales. No se acumulan llegadas durante el apagado ni se produce
+una ráfaga para recuperar ese tiempo al encenderla. Se conserva la fracción de llegada
+que ya había transcurrido. Las solicitudes completas pendientes, automáticas o
+manuales, siguen intentando incorporarse cuando hay espacio: conservan su tipo en
+una cola por acceso, no se descartan al apagar. Las entidades presentes siguen
+moviéndose si la simulación está iniciada. Pausar congela el tiempo y esos reintentos.
+
+**Agregar manualmente** contiene dos formularios: acceso, tipo y cantidad de
+vehículos; paso y cantidad de peatones. Cada botón admite entre 1 y 100 solicitudes.
+La confirmación informa cuántos vehículos entraron y cuántos quedaron pendientes por
+falta de espacio. Los peatones se incorporan en la acera y esperan su fase. La placa
+se asigna al materializar un vehículo y conserva unicidad dentro de la sesión.
+Cambiar de pestaña conserva los valores; reiniciar limpia el mundo y sus solicitudes,
+pero conserva las tasas, mezcla y estado del interruptor automático.
+
+El resumen fuera de las pestañas muestra fase, vehículos pendientes por eje, peatones
+en espera/cruzando y motivo actual. **Detalles y semáforos**, **Sensores** y
+**Demostraciones y pruebas** son desplegables independientes. Las demostraciones son
+casos técnicos, separados de los perfiles: al cargarlas se borra el mundo, reinicia
+el tiempo y se deja detenido. Una advertencia visible explica ese efecto. Cada caso
+define sus tasas desde cero, mezcla, tipo y generación habilitada, de modo que no
+hereda la configuración de la demostración anterior.
+
+![Controles generales y tráfico automático](docs/arrival-controls.png)
+
+![Formulario manual en ventana reducida](docs/arrival-controls-small.png)
+
+Validación: pruebas de pestañas sin efectos, perfiles durante ejecución, campos y tasas,
+automático desactivado, solicitudes mixtas y múltiples, capacidad insuficiente,
+conservación de tipo en pendientes, pausa/reinicio y placas. Se ejecutó la ventana con
+Qt nativo `windows`, temporizador, cambio de perfil, apagado automático, incorporación
+manual y reinicio programáticos. Las capturas de 1500×1000 y 800×600 se revisaron
+visualmente. En la ventana pequeña se desplazan los formularios y los diagnósticos,
+mientras la barra general permanece visible; no se afirma una prueba humana continua.

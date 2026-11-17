@@ -22,8 +22,8 @@ def test_window_title_and_required_texts(qtbot: QtBot) -> None:
     } <= texts
     button_texts = {button.text() for button in window.findChildren(QPushButton)}
     assert {"+", "−", "Restablecer"} <= button_texts
-    assert window.scenario_combo.currentData() is Scenario.BALANCED
-    assert window.config_panel.isHidden()
+    assert window.profile_combo.currentText() == "Equilibrado"
+    assert window.advanced_panel.isHidden()
     assert window.details_panel.isHidden()
     window._refresh_simulation()
     assert "Demanda pendiente" in window.metrics.text()

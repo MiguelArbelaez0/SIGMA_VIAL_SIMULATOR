@@ -132,12 +132,16 @@ class Simulation:
     decision: str = "Sin demanda; todos los accesos en rojo."
     blocked_exit: bool = False
     blocked_exits: set[Access] = field(default_factory=set)
+    automatic_generation: bool = True
     running: bool = False
     _rng: random.Random = field(init=False, repr=False)
     vehicle_mix: tuple[float, ...] = (12, 30, 25, 15, 8, 4, 4, 2)
     selected_vehicle_type: VehicleType | None = VehicleType.COMPACT
     observation_source: ObservationSource = field(default_factory=SimulatedObservationSource)
     sensor_timeout: float = 1.0
+    _requested_types: dict[Access, deque] = field(
+        default_factory=lambda: {a: deque() for a in Access}
+    )
     _next_id: int = 0
     _empty_time: float = 0
     _opposing_advantage_time: float = 0
@@ -174,17 +178,22 @@ class Simulation:
     def set_demand(self, access: Access, vehicles_per_minute: float) -> None:
         self.vehicle_rates[access] = max(0.0, min(60.0, vehicles_per_minute))
 
-    def add_vehicle(self, access: Access) -> bool:
-        if self._try_add_vehicle(access):
-            return True
-        self.requested[access] += 1
-        return False
-
-    def _try_add_vehicle(self, access: Access) -> bool:
-        kind = (
+    def _choose_vehicle_type(self) -> VehicleType:
+        return (
             self.selected_vehicle_type
             or self._rng.choices(tuple(VehicleType), weights=self.vehicle_mix, k=1)[0]
         )
+
+    def add_vehicle(self, access: Access) -> bool:
+        kind = self._choose_vehicle_type()
+        if self._try_add_vehicle(access, kind):
+            return True
+        self.requested[access] += 1
+        self._requested_types[access].append(kind)
+        return False
+
+    def _try_add_vehicle(self, access: Access, kind: VehicleType | None = None) -> bool:
+        kind = kind or self._choose_vehicle_type()
         length = kind.value[1]
         for lane in range(2):
             queue = self.lane_vehicles(access, lane)
@@ -389,20 +398,24 @@ class Simulation:
             return
         self.time += dt
         self.phase_time += dt
-        for access in Access:
-            self._arrival_due[access] += dt * self.vehicle_rates[access] / 60
-            while self._arrival_due[access] >= 1:
-                self._arrival_due[access] -= 1
-                self.add_vehicle(access)
-        self._pedestrian_due += dt * self.pedestrian_rate / 60
-        while self._pedestrian_due >= 1:
-            self._pedestrian_due -= 1
-            self.add_pedestrian(tuple(Access)[self._rng.randrange(4)])
+        if self.automatic_generation:
+            for access in Access:
+                self._arrival_due[access] += dt * self.vehicle_rates[access] / 60
+                while self._arrival_due[access] >= 1:
+                    self._arrival_due[access] -= 1
+                    self.add_vehicle(access)
+            self._pedestrian_due += dt * self.pedestrian_rate / 60
+            while self._pedestrian_due >= 1:
+                self._pedestrian_due -= 1
+                self.add_pedestrian(tuple(Access)[self._rng.randrange(4)])
         for access in Access:
             count = self.requested[access]
             for _ in range(min(count, 8)):
-                if self._try_add_vehicle(access):
+                pending = self._requested_types[access]
+                if self._try_add_vehicle(access, pending[0] if pending else None):
                     self.requested[access] -= 1
+                    if pending:
+                        pending.popleft()
                 else:
                     break
         self._move_vehicles(dt)
@@ -685,6 +698,11 @@ class Simulation:
 
     def load_scenario(self, scenario: Scenario) -> None:
         self.reset()
+        self.vehicle_rates = dict.fromkeys(Access, 0.0)
+        self.pedestrian_rate = 0
+        self.automatic_generation = True
+        self.selected_vehicle_type = VehicleType.COMPACT
+        self.vehicle_mix = (12, 30, 25, 15, 8, 4, 4, 2)
         if scenario is Scenario.BALANCED:
             self.vehicle_rates = dict.fromkeys(Access, 12.0)
             self.pedestrian_rate = 2.4
@@ -724,6 +742,7 @@ class Simulation:
             self.set_exit_blocked(Access.NORTH, True)
 
     def reset(self) -> None:
+        automatic_generation = self.automatic_generation
         selected_type = self.selected_vehicle_type
         vehicle_mix = self.vehicle_mix
         config, seed = self.config, self.seed
@@ -731,5 +750,6 @@ class Simulation:
         self.__dict__.update(Simulation(config=config, seed=seed).__dict__)
         self.vehicle_rates = rates
         self.pedestrian_rate = pedestrian_rate
+        self.automatic_generation = automatic_generation
         self.selected_vehicle_type = selected_type
         self.vehicle_mix = vehicle_mix

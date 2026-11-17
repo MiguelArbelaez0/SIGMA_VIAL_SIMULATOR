@@ -1,17 +1,19 @@
-"""Ventana del escenario estático: composición visual y controles de encuadre."""
+"""Ventana SIGMA con controles generales y formularios de llegada independientes."""
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
+    QSpinBox,
+    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -39,8 +41,10 @@ class MainWindow(QMainWindow):
         self.resize(1240, 860)
         self.setMinimumSize(800, 600)
         self.setStyleSheet("""
+            QWidget { background: white; color: #20334d; }
             QMainWindow, QWidget#root { background: #edf2f8; color: #20334d; }
             QLabel { color: #20334d; font-family: 'Segoe UI'; font-size: 14px; }
+            QFrame#header QLabel { background: transparent; }
             QFrame#header { background: #11243e; border-radius: 12px; }
             QLabel#title { color: white; font-size: 27px; font-weight: 700; }
             QLabel#company { color: #a8c7ec; font-size: 12px; font-weight: 600; }
@@ -63,13 +67,17 @@ class MainWindow(QMainWindow):
                 border-radius: 8px; padding: 11px; font-size: 13px; font-weight: 600; }
             QToolButton { color: #1a477f; background: #f5f8fc; border: 1px solid #d6e0ec;
                 padding: 9px; border-radius: 7px; text-align: left; font-weight: 600; }
-            QComboBox,
-    QCheckBox, QDoubleSpinBox { color: #20334d; background: white;
+            QComboBox, QDoubleSpinBox, QSpinBox { color: #20334d; background: white;
                 border: 1px solid #c5d9f3; padding: 5px 8px; border-radius: 6px;
                 min-height: 24px; }
             QComboBox::drop-down { border: none; width: 22px; }
             QComboBox QAbstractItemView { color: #20334d; background: white;
                 selection-background-color: #dceaff; }
+            QCheckBox { font-size: 12px; padding: 2px; }
+            QTabWidget::pane { background: white; border: 1px solid #d6e0ec; }
+            QTabBar::tab { background: #edf4ff; color: #1a477f;
+                padding: 7px 5px; font-size: 12px; border: 1px solid #d6e0ec; }
+            QTabBar::tab:selected { background: #dceaff; font-weight: 600; }
             QScrollArea { border: none; background: transparent; }
             QScrollBar:vertical { background: #e4ebf4; width: 8px; margin: 0; }
             QScrollBar::handle:vertical { background: #9bb0cb; min-height: 32px;
@@ -79,8 +87,8 @@ class MainWindow(QMainWindow):
         root = QWidget()
         root.setObjectName("root")
         outer = QVBoxLayout(root)
-        outer.setContentsMargins(20, 20, 20, 16)
-        outer.setSpacing(16)
+        outer.setContentsMargins(16, 16, 16, 12)
+        outer.setSpacing(12)
         outer.addWidget(self._header())
         geometry = IntersectionGeometry()
         config = SimulationConfig(
@@ -103,13 +111,24 @@ class MainWindow(QMainWindow):
         self._create_sensor_overlays()
         self.vehicle_items = {}
         self.pedestrian_items = {}
+        outer.addWidget(self._general_controls())
         body = QHBoxLayout()
         body.setSpacing(16)
         scene_card = QFrame()
         scene_card.setObjectName("card")
         scene_layout = QVBoxLayout(scene_card)
         scene_layout.setContentsMargins(16, 16, 16, 16)
-        scene_layout.addWidget(text_label("Intersección · Vista superior", "section"))
+        view_bar = QHBoxLayout()
+        view_bar.addWidget(text_label("Intersección · Vista superior", "section"), 1)
+        for title, action in (
+            ("−", self.intersection_view.zoom_out),
+            ("Restablecer", self.intersection_view.reset_view),
+            ("+", self.intersection_view.zoom_in),
+        ):
+            button = QPushButton(title)
+            button.clicked.connect(action)
+            view_bar.addWidget(button)
+        scene_layout.addLayout(view_bar)
         scene_layout.addWidget(self.intersection_view, 1)
         scene_layout.addWidget(
             text_label("Movimientos rectos · Circulación por la derecha", "muted")
@@ -118,21 +137,18 @@ class MainWindow(QMainWindow):
         body.addWidget(self._sidebar())
         outer.addLayout(body, 1)
         self.setCentralWidget(root)
+        self._refresh_simulation()
 
     def _header(self) -> QFrame:
         header = QFrame()
         header.setObjectName("header")
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(22, 17, 22, 17)
+        layout.setContentsMargins(22, 12, 22, 12)
         brand = QVBoxLayout()
         brand.setSpacing(4)
         brand.addWidget(text_label("SIGMA VIAL", "title"))
         brand.addWidget(text_label("SIGMA SOFTWARE SOLUTIONS", "company"))
         layout.addLayout(brand, 1)
-        self.status_label = text_label("Vista inicial · Simulación detenida", "status")
-        self.status_label.setMaximumWidth(330)
-        self.status_label.setMinimumWidth(290)
-        layout.addWidget(self.status_label)
         return header
 
     def _toggle_running(self) -> None:
@@ -260,13 +276,15 @@ class MainWindow(QMainWindow):
             self.sensor_status.setText(
                 "Detección simulada · umbral detenido ≤ 0,5 u/s\n" + "\n".join(lines)
             )
-        queue = " · ".join(f"{a.value}: {sim.waiting(a)}" for a in Access)
+        ns_pending = sim.waiting(Access.NORTH) + sim.waiting(Access.SOUTH)
+        ew_pending = sim.waiting(Access.EAST) + sim.waiting(Access.WEST)
         crossing = sum(p.walking for p in sim.pedestrians)
         pedestrian_waits = [p.wait for p in sim.pedestrians if not p.walking]
         self.overview.setText(
-            f"{sim.phase.value}\nFase {sim.phase_time:.1f} s · Simulado {sim.time:.1f} s\n"
-            f"Colas: {queue}\nPeatones: {sim.pedestrian_waiting()} esperando / "
-            f"{crossing} cruzando"
+            f"{sim.phase.value} · {sim.time:.1f} s\n"
+            f"Esperando N–S: {ns_pending} · O–O: {ew_pending}\n"
+            f"Peatones: {sim.pedestrian_waiting()} esperando / {crossing} cruzando\n"
+            f"{sim.decision}"
         )
         ns = (Access.NORTH, Access.SOUTH)
         ew = (Access.EAST, Access.WEST)
@@ -289,7 +307,7 @@ class MainWindow(QMainWindow):
         )
         self._show_vehicle_details()
         self.start_button.setText(
-            "Pausar" if sim.running else ("Reanudar" if self.has_started else "Iniciar")
+            "Pausar" if sim.running else ("Continuar" if self.has_started else "Iniciar")
         )
         self.status_label.setText(
             "Simulación activa"
@@ -305,22 +323,31 @@ class MainWindow(QMainWindow):
         self._set_sensor_interval(self.sensor_interval.value())
         self.has_started = False
         self._sync_signals()
+        self._clear_entity_items()
+        self._sync_rate_fields()
+        self._refresh_simulation()
+
+    def _clear_entity_items(self) -> None:
         for item in (*self.vehicle_items.values(), *self.pedestrian_items.values()):
             self.intersection_scene.removeItem(item)
         self.vehicle_items.clear()
         self.pedestrian_items.clear()
-        for access, rate in self.demand_controls.items():
-            rate.setValue(self.simulation.vehicle_rates[access])
-        self.pedestrian_rate.setValue(self.simulation.pedestrian_rate)
-        self._refresh_simulation()
 
     def _load_scenario(self) -> None:
         self.simulation_timer.stop()
+        self._clear_entity_items()
         self.simulation.load_scenario(self.scenario_combo.currentData())
         self._set_sensor_interval(self.sensor_interval.value())
         self._sync_entities()
         self._sync_signals()
         self.has_started = False
+        self._sync_rate_fields()
+        self.profile_combo.setCurrentIndex(4)
+        self.automatic_toggle.setChecked(self.simulation.automatic_generation)
+        self.vehicle_type.setCurrentIndex(
+            self.vehicle_type.findData(self.simulation.selected_vehicle_type)
+        )
+        self.heavy_share.setValue(10)
         self._refresh_simulation()
 
     def _add_vehicle(self, access: Access) -> None:
@@ -333,70 +360,84 @@ class MainWindow(QMainWindow):
         self._sync_entities()
         self._refresh_simulation()
 
-    def _sidebar(self) -> QScrollArea:
-        panel = QFrame()
-        panel.setObjectName("card")
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 18, 16, 18)
-        layout.setSpacing(9)
-        layout.addWidget(text_label("Escenario", "section"))
-        layout.addWidget(text_label("4 accesos · 2 carriles por sentido", "muted"))
-        primary = QHBoxLayout()
+    def _general_controls(self) -> QFrame:
+        bar = QFrame()
+        bar.setObjectName("card")
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(12, 8, 12, 8)
         self.start_button = QPushButton("Iniciar")
         self.start_button.setObjectName("primaryAction")
+        self.start_button.setMinimumWidth(90)
         self.start_button.clicked.connect(self._toggle_running)
-        primary.addWidget(self.start_button, 2)
-        reset_button = QPushButton("Reiniciar")
-        reset_button.clicked.connect(self._reset_simulation)
-        primary.addWidget(reset_button, 1)
-        layout.addLayout(primary)
-        speed_row = QHBoxLayout()
-        speed_row.addWidget(text_label("Velocidad"))
+        row.addWidget(self.start_button)
+        reset = QPushButton("Reiniciar")
+        reset.clicked.connect(self._reset_simulation)
+        row.addWidget(reset)
+        row.addWidget(text_label("Velocidad"))
         self.speed = QComboBox()
         for value in (0.5, 1, 2, 4):
             self.speed.addItem(f"{value:g}×", value)
         self.speed.setCurrentIndex(1)
-        speed_row.addWidget(self.speed, 1)
-        layout.addLayout(speed_row)
-        self.overview = text_label("Todos los accesos en rojo · esperando demanda", "overview")
+        row.addWidget(self.speed)
+        self.status_label = text_label("Vista inicial · Simulación detenida", "muted")
+        row.addWidget(self.status_label, 1)
+        return bar
+
+    @staticmethod
+    def _scroll_content(widget: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(widget)
+        return scroll
+
+    def _fold(self, layout, title, content):
+        button = QToolButton()
+        button.setText(title + "  ▸")
+        button.setCheckable(True)
+        button.toggled.connect(lambda checked: self._toggle_panel(button, content, checked))
+        content.hide()
+        layout.addWidget(button)
+        layout.addWidget(content)
+
+    @staticmethod
+    def _type_combo():
+        combo = QComboBox()
+        combo.setMinimumContentsLength(10)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.addItem("Aleatorio", None)
+        for kind in VehicleType:
+            combo.addItem(kind.value[0], kind)
+        return combo
+
+    def _sidebar(self) -> QWidget:
+        panel = QFrame()
+        panel.setObjectName("card")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+        self.overview = text_label("", "overview")
         layout.addWidget(self.overview)
-        layout.addWidget(text_label("Semáforos", "section"))
-        self.signal_labels = {}
-        for access, light in self.intersection_scene.traffic_lights.items():
-            signal = text_label(f"●  {access.value}  ·  {light.state.value}", "signal")
-            self.signal_labels[access] = signal
-            layout.addWidget(signal)
-        layout.addWidget(text_label("Vista", "section"))
-        view_row = QHBoxLayout()
-        for title, action in (
-            ("−", self.intersection_view.zoom_out),
-            ("Restablecer", self.intersection_view.reset_view),
-            ("+", self.intersection_view.zoom_in),
-        ):
-            button = QPushButton(title)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.clicked.connect(action)
-            view_row.addWidget(button)
-        layout.addLayout(view_row)
-        details_toggle = QToolButton()
-        details_toggle.setText("Detalles y métricas  ▸")
-        details_toggle.setCheckable(True)
-        details_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        details_toggle.toggled.connect(
-            lambda checked: self._toggle_panel(details_toggle, self.details_panel, checked)
-        )
-        layout.addWidget(details_toggle)
+        self.tabs = QTabWidget()
+        self.tabs.setMinimumHeight(100)
+        self.tabs.addTab(self._automatic_form(), "Tráfico automático")
+        self.tabs.addTab(self._manual_form(), "Agregar manualmente")
+        layout.addWidget(self.tabs, 1)
+        diagnostics = QWidget()
+        info_layout = QVBoxLayout(diagnostics)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setSpacing(6)
         self.details_panel = QWidget()
         details_layout = QVBoxLayout(self.details_panel)
-        details_layout.setContentsMargins(6, 3, 6, 3)
-        details_layout.addWidget(
-            text_label("Los semáforos controlan dos carriles de entrada por acceso.", "muted")
-        )
-        self.metrics = text_label("Mayor espera: 0.0 s", "muted")
+        details_layout.setContentsMargins(4, 4, 4, 4)
+        self.signal_labels = {}
+        for access, light in self.intersection_scene.traffic_lights.items():
+            label = text_label(f"● {access.value} · {light.state.value}", "signal")
+            self.signal_labels[access] = label
+            details_layout.addWidget(label)
+        self.metrics = text_label("", "muted")
         details_layout.addWidget(self.metrics)
-        self.details_panel.setVisible(False)
-        layout.addWidget(self.details_panel)
-
+        self._fold(info_layout, "Detalles y semáforos", self.details_panel)
         sensor_toggle = QToolButton()
         sensor_toggle.setText("Sensores  ▸")
         sensor_toggle.setCheckable(True)
@@ -422,93 +463,217 @@ class MainWindow(QMainWindow):
         sensor_toggle.toggled.connect(
             lambda checked: self._toggle_panel(sensor_toggle, self.sensor_panel, checked)
         )
-        layout.addWidget(sensor_toggle)
-        layout.addWidget(self.sensor_panel)
-        config_toggle = QToolButton()
-        config_toggle.setText("Configuración y escenario  ▸")
-        config_toggle.setCheckable(True)
-        config_toggle.toggled.connect(
-            lambda checked: self._toggle_panel(config_toggle, self.config_panel, checked)
+        info_layout.addWidget(sensor_toggle)
+        info_layout.addWidget(self.sensor_panel)
+
+        self.demo_panel = QWidget()
+        demo_layout = QVBoxLayout(self.demo_panel)
+        demo_layout.setContentsMargins(4, 4, 4, 4)
+        demo_layout.addWidget(
+            text_label(
+                "Cargar una demostración borra las entidades, reinicia el reloj "
+                "y deja la simulación detenida.",
+                "muted",
+            )
         )
-        layout.addWidget(config_toggle)
-        self.config_panel = QWidget()
-        config_layout = QVBoxLayout(self.config_panel)
-        config_layout.setContentsMargins(6, 3, 6, 3)
-        config_layout.setSpacing(7)
-        config_layout.addWidget(text_label("Escenario reproducible", "section"))
         self.scenario_combo = QComboBox()
-        for scenario in Scenario:
+        for scenario in tuple(Scenario)[4:]:
             self.scenario_combo.addItem(scenario.value, scenario)
-        config_layout.addWidget(self.scenario_combo)
-        scenario_button = QPushButton("Cargar escenario")
-        scenario_button.clicked.connect(self._load_scenario)
-        config_layout.addWidget(scenario_button)
-        config_layout.addWidget(text_label("Demanda · vehículos por minuto", "muted"))
-        self.vehicle_type = QComboBox()
-        self.vehicle_type.addItem("Aleatorio", None)
-        for kind in VehicleType:
-            self.vehicle_type.addItem(kind.value[0], kind)
-        self.vehicle_type.currentIndexChanged.connect(
-            lambda: setattr(
-                self.simulation, "selected_vehicle_type", self.vehicle_type.currentData()
+        demo_layout.addWidget(self.scenario_combo)
+        load = QPushButton("Cargar demostración")
+        load.clicked.connect(self._load_scenario)
+        demo_layout.addWidget(load)
+        self._fold(info_layout, "Demostraciones y pruebas", self.demo_panel)
+        info_layout.addStretch()
+        for button in diagnostics.findChildren(QToolButton):
+            button.setStyleSheet("padding: 5px 8px; font-size: 12px;")
+        diagnostic_scroll = self._scroll_content(diagnostics)
+        diagnostic_scroll.setMinimumHeight(70)
+        diagnostic_scroll.setMaximumHeight(115)
+        layout.addWidget(diagnostic_scroll)
+        panel.setFixedWidth(350)
+        return panel
+
+    def _automatic_form(self):
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(8, 10, 8, 10)
+        layout.setSpacing(8)
+        self.automatic_toggle = QCheckBox("Generar tráfico automáticamente")
+        self.automatic_toggle.setChecked(self.simulation.automatic_generation)
+        self.automatic_toggle.toggled.connect(self._set_automatic)
+        layout.addWidget(self.automatic_toggle)
+        form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.profile_combo = QComboBox()
+        self.profile_combo.setMinimumContentsLength(12)
+        self.profile_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.profile_combo.addItems(
+            (
+                "Equilibrado",
+                "Mayor tráfico Norte–Sur",
+                "Mayor tráfico Oriente–Occidente",
+                "Más peatones",
+                "Personalizado",
             )
         )
-        self.simulation.selected_vehicle_type = None
-        config_layout.addWidget(self.vehicle_type)
-        config_layout.addWidget(text_label("Buses y camiones en mezcla aleatoria", "muted"))
-        self.heavy_share = QDoubleSpinBox()
-        self.heavy_share.setRange(0, 100)
-        self.heavy_share.setSuffix(" %")
-        self.heavy_share.setValue(10)
-        self.heavy_share.valueChanged.connect(
-            lambda value: setattr(
-                self.simulation,
-                "vehicle_mix",
-                tuple((100 - value) * weight / 90 for weight in (12, 30, 25, 15, 8))
-                + (value * 0.4, value * 0.4, value * 0.2),
-            )
-        )
-        config_layout.addWidget(self.heavy_share)
+        form.addRow(text_label("Perfil", "muted"))
+        form.addRow(self.profile_combo)
         self.demand_controls = {}
         for access in Access:
-            row = QHBoxLayout()
-            row.addWidget(text_label(access.value))
             rate = QDoubleSpinBox()
             rate.setRange(0, 60)
             rate.setValue(self.simulation.vehicle_rates[access])
             rate.setSuffix(" veh/min")
             rate.valueChanged.connect(
-                lambda value, item=access: self.simulation.set_demand(item, value)
+                lambda value, access=access: self._edit_vehicle_rate(access, value)
             )
             self.demand_controls[access] = rate
-            row.addWidget(rate)
-            config_layout.addLayout(row)
-            add_vehicle = QPushButton(f"Agregar vehículo · {access.value}")
-            add_vehicle.clicked.connect(lambda checked=False, item=access: self._add_vehicle(item))
-            config_layout.addWidget(add_vehicle)
-        config_layout.addWidget(text_label("Peatones por minuto", "muted"))
+            form.addRow(access.value, rate)
         self.pedestrian_rate = QDoubleSpinBox()
         self.pedestrian_rate.setRange(0, 60)
         self.pedestrian_rate.setValue(self.simulation.pedestrian_rate)
         self.pedestrian_rate.setSuffix(" pers/min")
-        self.pedestrian_rate.valueChanged.connect(
-            lambda value: setattr(self.simulation, "pedestrian_rate", value)
+        self.pedestrian_rate.valueChanged.connect(self._edit_pedestrian_rate)
+        form.addRow("Peatones", self.pedestrian_rate)
+        self.vehicle_type = self._type_combo()
+        self.simulation.selected_vehicle_type = None
+        self.vehicle_type.currentIndexChanged.connect(
+            lambda: setattr(
+                self.simulation, "selected_vehicle_type", self.vehicle_type.currentData()
+            )
         )
-        config_layout.addWidget(self.pedestrian_rate)
-        for access in Access:
-            button = QPushButton(f"Agregar peatón · {access.value}")
-            button.clicked.connect(lambda checked=False, item=access: self._add_pedestrian(item))
-            config_layout.addWidget(button)
-        self.config_panel.setVisible(False)
-        layout.addWidget(self.config_panel)
-        layout.addWidget(text_label("Arrastra el plano para recorrerlo con zoom.", "muted"))
+        form.addRow("Tipos", self.vehicle_type)
+        self.heavy_share = QDoubleSpinBox()
+        self.heavy_share.setRange(0, 100)
+        self.heavy_share.setValue(10)
+        self.heavy_share.setSuffix(" %")
+        self.heavy_share.valueChanged.connect(self._set_mix)
+        form.addRow("Buses/camiones", self.heavy_share)
+        layout.addLayout(form)
+        self.advanced_panel = QWidget()
+        advanced = QVBoxLayout(self.advanced_panel)
+        advanced.addWidget(
+            text_label(
+                "Al desactivar: se congela el progreso de nuevas llegadas. "
+                "Las solicitudes pendientes se incorporan cuando haya espacio, "
+                "conservando su tipo. No hay recuperación masiva de llegadas al activar.",
+                "muted",
+            )
+        )
+        self._fold(layout, "Ajustes avanzados", self.advanced_panel)
+        self.profile_combo.currentIndexChanged.connect(self._apply_profile)
         layout.addStretch()
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(panel)
-        scroll.setFixedWidth(310)
-        scroll.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        return scroll
+        return self._scroll_content(content)
+
+    def _manual_form(self):
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(8, 10, 8, 10)
+        layout.addWidget(text_label("Vehículos", "section"))
+        form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.manual_access = QComboBox()
+        self.pedestrian_access = QComboBox()
+        for access in Access:
+            self.manual_access.addItem(access.value, access)
+            self.pedestrian_access.addItem(access.value, access)
+        self.manual_type = self._type_combo()
+        self.manual_count = QSpinBox()
+        self.manual_count.setRange(1, 100)
+        form.addRow("Acceso", self.manual_access)
+        form.addRow("Tipo", self.manual_type)
+        form.addRow("Cantidad", self.manual_count)
+        layout.addLayout(form)
+        add = QPushButton("Agregar vehículos")
+        add.clicked.connect(self._add_manual_vehicles)
+        layout.addWidget(add)
+        layout.addWidget(text_label("Peatones", "section"))
+        pedestrians = QFormLayout()
+        pedestrians.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.manual_pedestrian_count = QSpinBox()
+        self.manual_pedestrian_count.setRange(1, 100)
+        pedestrians.addRow("Paso peatonal", self.pedestrian_access)
+        pedestrians.addRow("Cantidad", self.manual_pedestrian_count)
+        layout.addLayout(pedestrians)
+        add_pedestrians = QPushButton("Agregar peatones")
+        add_pedestrians.clicked.connect(self._add_manual_pedestrians)
+        layout.addWidget(add_pedestrians)
+        self.manual_result = text_label(
+            "Se pueden agregar entidades con generación automática encendida o apagada.", "muted"
+        )
+        layout.addWidget(self.manual_result)
+        layout.addStretch()
+        return self._scroll_content(content)
+
+    def _set_automatic(self, enabled):
+        self.simulation.automatic_generation = enabled
+        self._refresh_simulation()
+
+    def _set_mix(self, value):
+        self.simulation.vehicle_mix = tuple(
+            (100 - value) * weight / 90 for weight in (12, 30, 25, 15, 8)
+        ) + (value * 0.4, value * 0.4, value * 0.2)
+
+    def _edit_vehicle_rate(self, access, value):
+        self.simulation.set_demand(access, value)
+        self.profile_combo.setCurrentIndex(4)
+
+    def _edit_pedestrian_rate(self, value):
+        self.simulation.pedestrian_rate = value
+        self.profile_combo.setCurrentIndex(4)
+
+    def _apply_profile(self, index):
+        profiles = (
+            (12, 12, 12, 12, 2.4),
+            (18, 18, 3, 3, 2.4),
+            (3, 3, 18, 18, 2.4),
+            (4, 4, 4, 4, 12),
+        )
+        if index >= len(profiles):
+            return
+        values = profiles[index]
+        self.simulation.vehicle_rates = dict(zip(Access, values[:4], strict=True))
+        self.simulation.pedestrian_rate = values[4]
+        self._sync_rate_fields()
+
+    def _sync_rate_fields(self):
+        for access, control in self.demand_controls.items():
+            control.blockSignals(True)
+            control.setValue(self.simulation.vehicle_rates[access])
+            control.blockSignals(False)
+        self.pedestrian_rate.blockSignals(True)
+        self.pedestrian_rate.setValue(self.simulation.pedestrian_rate)
+        self.pedestrian_rate.blockSignals(False)
+
+    def _add_manual_vehicles(self):
+        previous = self.simulation.selected_vehicle_type
+        self.simulation.selected_vehicle_type = self.manual_type.currentData()
+        inserted = 0
+        count = self.manual_count.value()
+        try:
+            for _ in range(count):
+                inserted += self.simulation.add_vehicle(self.manual_access.currentData())
+        finally:
+            self.simulation.selected_vehicle_type = previous
+        self.manual_result.setText(
+            f"Vehículos: {inserted} incorporados · {count - inserted} solicitudes "
+            "pendientes por falta de espacio."
+        )
+        self._sync_entities()
+        self._refresh_simulation()
+
+    def _add_manual_pedestrians(self):
+        count = self.manual_pedestrian_count.value()
+        for _ in range(count):
+            self.simulation.add_pedestrian(self.pedestrian_access.currentData())
+        self.manual_result.setText(
+            f"Peatones: {count} incorporados en la acera · 0 solicitudes pendientes."
+        )
+        self._sync_entities()
+        self._refresh_simulation()
 
     @staticmethod
     def _toggle_panel(button: QToolButton, panel: QWidget, expanded: bool) -> None:
