@@ -1,8 +1,8 @@
 # SIGMA VIAL
 
 Aplicación de escritorio de **SIGMA SOFTWARE SOLUTIONS** para una futura simulación
-vial virtual. Estado actual: entorno de desarrollo y ventana inicial ejecutable.
-Todavía no se implementa la simulación.
+vial virtual. Estado actual: entorno de desarrollo e interfaz vectorial de la
+intersección ejecutable. La simulación de tráfico todavía está pendiente.
 
 ## Preparación en Windows / PowerShell
 
@@ -69,7 +69,10 @@ La resolución de paquetes y las pruebas locales complementan esa comprobación.
 .\.venv\Scripts\python.exe -m ruff format .
 ```
 
-Las pruebas comprueban textos, construcción, apertura, cambio de tamaño y cierre.
+Las pruebas comprueban textos, construcción, apertura, cambio de tamaño y cierre,
+cuatro accesos, 16 carriles, sentidos de las flechas realmente dibujadas, cuatro
+semáforos inicialmente rojos, colores renderizados por estado y controles de zoom.
+También verifican que los semáforos y rótulos no invadan las calzadas.
 Las importaciones se prueban en procesos independientes con tiempo límite, sin
 crear una QApplication. pytest-qt administra su propia aplicación y no deja un
 bucle gráfico bloqueado. En equipos sin pantalla se puede establecer temporalmente
@@ -78,15 +81,18 @@ Retirar esa variable con `Remove-Item Env:QT_QPA_PLATFORM` antes de abrir la ven
 
 ## Organización
 
-- `src/sigma_vial/domain/`: futuras entidades y reglas puras, sin PySide6.
+- `src/sigma_vial/domain/`: accesos, configuración de carriles y estados de luz; sin Qt.
 - `src/sigma_vial/application/`: futura coordinación de casos de uso.
-- `src/sigma_vial/presentation/`: ventana y componentes PySide6.
+- `src/sigma_vial/presentation/`: composición de la ventana (`main_window.py`),
+  geometría común (`geometry.py`), pavimento y marcas (`road_items.py`), semáforo
+  reutilizable (`traffic_light.py`), escena (`intersection_scene.py`) y vista
+  con encuadre y zoom (`intersection_view.py`).
 - `src/sigma_vial/infrastructure/`: futuros adaptadores externos.
 - `src/sigma_vial/bootstrap.py`: composición y ciclo de vida de QApplication.
 - `src/sigma_vial/__main__.py`: ejecución mediante `python -m sigma_vial`.
 - `tests/`: pruebas automáticas y contratos de importación.
 
-Los paquetes futuros se documentan sin clases o servicios anticipados. La ventana
+Los paquetes de aplicación e infraestructura siguen mínimos y documentados. La ventana
 no contiene reglas de tráfico y los módulos no arrancan la interfaz al importarse.
 
 ## Alcance previsto y pendientes
@@ -99,20 +105,46 @@ reinicio y demanda, y visualización de filas, esperas y fase actual.
 
 Supuestos iniciales: solo movimientos rectos; norte-sur comparte fase y
 oriente-occidente comparte otra. **Los peatones tendrán una fase exclusiva**.
-Todo lo anterior está pendiente. La etapa actual solo muestra el título, la empresa
-y el mensaje de preparación, sin botones ficticios ni resultados inventados.
+Implementado en esta etapa:
+
+- Cruce en “+” con norte arriba, sur abajo, oriente a la derecha y occidente a la izquierda.
+- Dos carriles de entrada y dos de salida por brazo (8 + 8 en total), circulación
+  por la derecha, flechas rectas, separación de sentidos y líneas discontinuas.
+- Aceras, cuatro pasos peatonales y detención antes del paso en cada entrada.
+- Cuatro semáforos etiquetados, inicialmente rojos, fuera de las calzadas. El
+  componente puede representar rojo, amarillo o verde, sin cambios automáticos
+  ni controles manuales de fases. Cada uno corresponde a los dos carriles de entrada.
+- Panel informativo, estado «Vista inicial · Simulación detenida» y controles
+  **Acercar**, **Alejar** y **Restablecer vista**. Se puede arrastrar el plano al
+  ampliar. El zoom está acotado; restablecer encuadra los cuatro brazos.
+- Ajuste de escena al redimensionar, tamaño mínimo de ventana de 800 × 600 unidades
+  lógicas y desplazamiento vertical del panel cuando falta espacio. Para inspeccionar
+  detalles en ventanas pequeñas, usar Acercar y después Restablecer vista.
+- Gráficos vectoriales locales con QGraphicsScene/QGraphicsView. La aplicación
+  instalada funciona sin internet y no depende de la captura para dibujar el cruce.
+
+Pendiente: vehículos y peatones animados, reloj de simulación, generación de demanda,
+inicio/pausa/reinicio, métricas y reportes, transiciones semafóricas y control adaptativo.
+No hay resultados inventados ni controles de simulación todavía inexistentes.
 No utiliza cámaras, IA, nube, bases de datos ni hardware. ESP32 y semáforos físicos
 se considerarán en una etapa posterior.
 
 ## Ramas y próxima etapa
 
-Esta preparación se realiza en `setup/development-environment`, para revisión sin
-commit, push ni merge automáticos. El repositorio inicial no tenía commits;
-`main` no tendrá una referencia consolidada hasta el primer commit acordado.
-El remoto `origin` ya existía y no se ha modificado ni sincronizado.
+La preparación del entorno está en el commit `5806bd6`
+(`setup/development-environment`). Esta interfaz se desarrolla en
+`feature/intersection-ui`, creada directamente desde ese commit verificado,
+aunque `main` no exista. No se modifica la rama base ni se ejecutan commits, push o
+merge automáticamente; los cambios se dejan para revisión.
 
-Próxima etapa: interfaz de la intersección en `feature/intersection-ui`.
-Después: `feature/traffic-simulation`, `feature/adaptive-control`,
-`feature/simulation-controls` y `feature/hardware-integration`.
-Estas ramas no se crean ahora. Cada una deberá partir de una base que incluya
-los cambios anteriores revisados e integrados.
+Próxima etapa: `feature/traffic-simulation`. Después:
+`feature/adaptive-control`, `feature/simulation-controls` y
+`feature/hardware-integration`. Estas ramas futuras no se crean ahora. Cada una
+deberá partir de una base que incluya los cambios anteriores revisados e integrados.
+
+## Revisión de la interfaz
+
+La captura real de la ventana se guarda en
+[`docs/intersection-ui.png`](docs/intersection-ui.png).
+La revisión manual y los resultados de esta entrega están documentados en
+[`docs/validation-intersection-ui.md`](docs/validation-intersection-ui.md).
