@@ -8,6 +8,7 @@ from enum import Enum
 from sigma_vial.domain.catalog import CATALOG, VehicleType
 from sigma_vial.domain.perception import ObservationSource, SensorStatus, SimulatedObservationSource
 from sigma_vial.domain.plates import PlateService
+from sigma_vial.domain.registration import COLORS, RegisteredVehicle, VehicleRegistry
 from sigma_vial.domain.scenario import Access, SignalState
 
 
@@ -96,6 +97,7 @@ class Vehicle:
     model_id: str = ""
     brand: str = "SIGMA ficticia"
     model: str = ""
+    color: str = COLORS[0]
 
     @property
     def length(self) -> float:
@@ -139,6 +141,7 @@ class Simulation:
     selected_vehicle_type: VehicleType | None = VehicleType.COMPACT
     observation_source: ObservationSource = field(default_factory=SimulatedObservationSource)
     sensor_timeout: float = 1.0
+    registry: VehicleRegistry | None = None
     _requested_types: dict[Access, deque] = field(
         default_factory=lambda: {a: deque() for a in Access}
     )
@@ -202,18 +205,31 @@ class Simulation:
                 or queue[0].position >= (queue[0].length + length) / 2 + self.config.body_gap
             ):
                 self._next_id += 1
-                self.vehicles.append(
-                    Vehicle(
-                        self._next_id,
-                        access,
-                        lane,
-                        kind=kind,
-                        plate=self.plates.issue(kind is VehicleType.MOTORCYCLE),
-                        model_id=CATALOG[kind].model_id,
-                        brand=CATALOG[kind].brand,
-                        model=CATALOG[kind].model,
-                    )
+                vehicle = Vehicle(
+                    self._next_id,
+                    access,
+                    lane,
+                    kind=kind,
+                    plate=self.plates.issue(kind is VehicleType.MOTORCYCLE),
+                    color=COLORS[self._next_id % len(COLORS)],
+                    model_id=CATALOG[kind].model_id,
+                    brand=CATALOG[kind].brand,
+                    model=CATALOG[kind].model,
                 )
+                if self.registry is not None:
+                    while not self.registry.reserve(
+                        RegisteredVehicle(
+                            vehicle.plate,
+                            kind.name,
+                            vehicle.brand,
+                            vehicle.model,
+                            vehicle.color,
+                            vehicle.length,
+                            vehicle.width,
+                        )
+                    ):
+                        vehicle.plate = self.plates.issue(kind is VehicleType.MOTORCYCLE)
+                self.vehicles.append(vehicle)
                 return True
         return False
 
@@ -747,7 +763,7 @@ class Simulation:
         vehicle_mix = self.vehicle_mix
         config, seed = self.config, self.seed
         rates, pedestrian_rate = self.vehicle_rates.copy(), self.pedestrian_rate
-        self.__dict__.update(Simulation(config=config, seed=seed).__dict__)
+        self.__dict__.update(Simulation(config=config, seed=seed, registry=self.registry).__dict__)
         self.vehicle_rates = rates
         self.pedestrian_rate = pedestrian_rate
         self.automatic_generation = automatic_generation

@@ -418,3 +418,7 @@ precisión con cámaras representativas, ni una prueba humana continua de operac
 ### Monitoreo: sesiones y retención
 
 Cada cambio de seguimiento, modo o sesión invalida los trabajos anteriores mediante una generación. Un resultado pendiente nunca restaura el reloj de la sesión anterior. Las ventanas se destruyen al cerrarlas; los puntos por trayectoria se limitan a 128 y los seguimientos sin observaciones caducan a los 10 segundos. Los mapas de cámaras simuladas retienen únicamente vehículos presentes; el contador acumulado se conserva. El registro de placas usadas es independiente y no se poda con los historiales.
+
+### Registro persistente de vehículos ficticios
+
+La aplicación registra cada incorporación (manual, automática o demostración) en SQLite antes de mostrarla. Placa PRIMARY KEY/UNIQUE, tipo, marca y modelo del catálogo ficticio, color hexadecimal del dibujo y dimensiones en unidades simuladas. Las colisiones entre sesiones se resuelven generando otra placa e intentando la inserción atómica; reiniciar no borra filas. Ubicación Windows: `%LOCALAPPDATA%/SIGMA SOFTWARE SOLUTIONS/SIGMA VIAL/vehicles.sqlite3`; `SIGMA_VIAL_REGISTRY` permite elegir otra ruta (las pruebas siempre usan archivos temporales). No es un registro oficial. El motor sin adaptador SQLite conserva su modo determinista en memoria.

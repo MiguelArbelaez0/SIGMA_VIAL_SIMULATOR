@@ -1,6 +1,7 @@
 """Ventana SIGMA con controles generales y formularios de llegada independientes."""
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -99,7 +100,10 @@ class MainWindow(QMainWindow):
             pedestrian_crossing_length=2 * geometry.road_half_width,
             vehicle_length=28,
         )
-        self.simulation = Simulation(config=config)
+        from sigma_vial.infrastructure.vehicle_registry import SQLiteVehicleRegistry, registry_path
+
+        self.registry = SQLiteVehicleRegistry(registry_path())
+        self.simulation = Simulation(config=config, registry=self.registry)
         self.simulation_timer = QTimer(self)
         self.simulation_timer.setInterval(50)
         self.simulation_timer.timeout.connect(self._advance_simulation)
@@ -199,6 +203,7 @@ class MainWindow(QMainWindow):
                 item.setZValue(15)
                 self.intersection_scene.addItem(item)
                 self.vehicle_items[vehicle.identifier] = item
+            item.color = QColor(vehicle.color)
             item.plate = vehicle.plate
             item.setToolTip(
                 f"Datos del escenario · {vehicle.plate} · {vehicle.kind.value[0]} "
