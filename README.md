@@ -422,3 +422,7 @@ Cada cambio de seguimiento, modo o sesión invalida los trabajos anteriores medi
 ### Registro persistente de vehículos ficticios
 
 La aplicación registra cada incorporación (manual, automática o demostración) en SQLite antes de mostrarla. Placa PRIMARY KEY/UNIQUE, tipo, marca y modelo del catálogo ficticio, color hexadecimal del dibujo y dimensiones en unidades simuladas. Las colisiones entre sesiones se resuelven generando otra placa e intentando la inserción atómica; reiniciar no borra filas. Ubicación Windows: `%LOCALAPPDATA%/SIGMA SOFTWARE SOLUTIONS/SIGMA VIAL/vehicles.sqlite3`; `SIGMA_VIAL_REGISTRY` permite elegir otra ruta (las pruebas siempre usan archivos temporales). No es un registro oficial. El motor sin adaptador SQLite conserva su modo determinista en memoria.
+
+### Cámara trasera sintética
+
+El renderizador `rear_camera` crea una imagen RGB frontal al plano trasero del vehículo. La escala y posición dependen de su avance, con una placa amarilla de al menos 200 × 45 píxeles en cobertura. La imagen se etiqueta sintética: el renderizador usa la placa para dibujarla, nunca para reconocerla. El recorte sale de la geometría conocida, no de YOLOX ni de un localizador aprendido. Sin vehículo produce una imagen vacía de vehículos y ningún recorte. Es una proyección simplificada, no una cámara fotorealista ni una recuperación desde la vista cenital.
