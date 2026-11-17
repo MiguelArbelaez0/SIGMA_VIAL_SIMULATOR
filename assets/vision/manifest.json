@@ -1,0 +1,18 @@
+{
+  "nanodet.onnx": {
+    "bytes": 3800954,
+    "sha256": "4b82da9944b88577175ee23a459dce2e26e6e4be573def65b1055dc2d9720186"
+  },
+  "synthetic.png": {
+    "bytes": 4788,
+    "sha256": "6c241c251e97b75f4bdc3f5f5422f700848c26baf6d01a13ce98af15d256f13b"
+  },
+  "traffic-demo.mp4": {
+    "bytes": 459802,
+    "sha256": "8940ae50967049c7e1cb40c81d356efd7c9c6eb4f729e764586034652ecacbf0"
+  },
+  "yolox.onnx": {
+    "bytes": 35858002,
+    "sha256": "c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063"
+  }
+}

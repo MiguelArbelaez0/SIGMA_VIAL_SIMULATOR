@@ -1,0 +1,12 @@
+{
+  "review": "Cajas aproximadas revisadas visualmente en fotogramas de 960x540; un automóvil en cinco instantes y un fotograma negativo. No son un benchmark representativo.",
+  "real": {"video":"assets/vision/traffic-demo.mp4", "frames":[
+    {"time":0,"boxes":[]},
+    {"time":2,"boxes":[[80,450,295,540]]},
+    {"time":4,"boxes":[[170,190,356,440]]},
+    {"time":5,"boxes":[[150,96,325,289]]},
+    {"time":6,"boxes":[[0,65,227,208]]},
+    {"time":7,"boxes":[[0,73,87,194]]}
+  ]},
+  "synthetic": {"image":"assets/vision/synthetic.png", "boxes":[[158,172,190,228],[43,352,75,408]]}
+}

@@ -338,3 +338,79 @@ Qt nativo `windows`, temporizador, cambio de perfil, apagado automático, incorp
 manual y reinicio programáticos. Las capturas de 1500×1000 y 800×600 se revisaron
 visualmente. En la ventana pequeña se desplazan los formularios y los diagnósticos,
 mientras la barra general permanece visible; no se afirma una prueba humana continua.
+
+
+## Centro de monitoreo y laboratorio de visión
+
+El botón **Centro de monitoreo**, en la barra general, abre una ventana independiente
+sin detener el cruce. En **Percepción simulada** aparecen cuatro imágenes del plano,
+una por acceso, con cobertura, carriles, línea/sentido de conteo, estado, antigüedad,
+recuadros, tipo, movimiento e ID. **Ampliar** abre una vista mayor. Seleccionar un
+recuadro muestra primera/última observación, estado y trayectoria. El plano y su
+selección conservan los datos del escenario separados de los observados.
+
+La ruta real de imágenes es opcional. Desde la raíz del repositorio:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,vision]"
+.\.venv\Scripts\python.exe -m sigma_vial
+```
+
+- **Video de demostración** reproduce el pequeño extracto incluido y ejecuta YOLOX
+  sobre sus píxeles. También se puede **Abrir video local**. No se envía ese video a
+  servicios externos y no se descarga nada al arrancar la aplicación.
+- **Captura del simulador · prueba de píxeles** envía imágenes de la vista Norte al
+  mismo detector. Los dos modelos evaluados fallaron en los dibujos actuales; esta
+  opción es experimental y no reemplaza a la percepción simulada del controlador.
+- Los otros tres recuadros indican que no tienen fuente asignada en el laboratorio
+  de un video, para evitar representar una única grabación como cuatro cámaras.
+- Línea de conteo y sentido son configurables. La velocidad es **px/s**, nunca km/h;
+  la cola es un conteo de vehículos con velocidad estimada ≤ 3 px/s, no metros.
+  No se calcula velocidad al primer avistamiento; se confirma con otra observación.
+- Solo se exponen las categorías del modelo: automóvil, motocicleta, bus y camión.
+  No se deducen marca/modelo ni se muestran confianzas inventadas. Placas: **Sin
+  lectura**, porque no hay un módulo de detección de placa/OCR. La lectura sintética
+  del escenario conserva su etiqueta **Lectura simulada** y no completa videos.
+
+`ImageSource`/`ImageFrame` permiten incorporar posteriormente una fuente externa.
+El detector y `ImageTracker` reciben exclusivamente imágenes/tiempos y calibración;
+no consultan entidades del simulador. `traffic_from_tracks` convierte sus resultados
+al contrato `TrafficSummary` existente, separando cola, ocupación, demanda y paso
+histórico. El laboratorio utiliza ese resumen para mostrar métricas, pero **no
+conecta la grabación al control del cruce**. No se implementa reproducción de demanda
+en esta etapa: los vehículos filmados no reaccionan a nuestros semáforos. El
+control automático existente sigue usando sus cámaras simuladas y las protecciones
+del mundo; no se altera la política de respaldo por ausencia de observaciones.
+
+Las imágenes se procesan fuera del hilo gráfico: un trabajador, un fotograma en curso
+y sin cola creciente. Se saltan solicitudes cuando está ocupado. Fin de video
+finaliza detecciones activas y se identifica como ausencia de imagen. Los dibujos del
+cruce se capturan en el hilo de Qt, pero la inferencia y decodificación de video se
+realizan en el trabajador. No se conectó hardware ni se entrenó un modelo.
+
+La comparación visual, errores, límites y tiempos están en
+[`docs/vision-evaluation/REPORT.md`](docs/vision-evaluation/REPORT.md). Para repetirla:
+
+```powershell
+.\.venv\Scripts\python.exe tools/evaluate_vision.py
+```
+
+YOLOX localizó las cinco apariciones del automóvil en la pequeña muestra real;
+NanoDet una. Ambos omitieron los dos automóviles dibujados. Esto no demuestra precisión
+general. Modelos, código y pesos: Apache-2.0 de OpenCV Zoo; extracto de video:
+CC BY 4.0 de Intel IoT DevKit/sample-videos, con crédito y cambios documentados en
+[`assets/vision/CREDITS.md`](assets/vision/CREDITS.md). La ruta fue comprobada con
+Python 3.14, OpenCV headless 5.1.0.95 y NumPy 2.5.5 en Windows/CPU; no requiere GPU.
+OpenCV 5 puede emitir un aviso sobre `setPreferableTarget`; las inferencias evaluadas
+terminaron correctamente en CPU. Los pesos se ubican en `assets/vision` desde la raíz
+fuente; una instalación redistribuible necesitará empaquetar esos recursos o seleccionar
+el archivo ONNX compatible con YOLOX mediante el botón del centro de monitoreo.
+
+![Cuatro cámaras de percepción simulada](docs/monitoring-simulated.png)
+
+![Detección del modelo sobre video local](docs/monitoring-video.png)
+
+El fotograma de video dentro de la última captura deriva del clip CC BY 4.0 citado;
+se distribuye con esa licencia y atribución. Las pruebas de seguimiento y la revisión
+de capturas complementan la evaluación anotada; no sustituyen una validación de
+precisión con cámaras representativas, ni una prueba humana continua de operación.

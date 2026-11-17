@@ -381,6 +381,9 @@ class MainWindow(QMainWindow):
         row.addWidget(self.speed)
         self.status_label = text_label("Vista inicial · Simulación detenida", "muted")
         row.addWidget(self.status_label, 1)
+        monitoring = QPushButton("Centro de monitoreo")
+        monitoring.clicked.connect(self._open_monitoring)
+        row.addWidget(monitoring)
         return bar
 
     @staticmethod
@@ -730,3 +733,16 @@ class MainWindow(QMainWindow):
                 )
                 return
         self.vehicle_details.setText("Selecciona un vehículo para inspeccionarlo.")
+
+    def _open_monitoring(self):
+        from sigma_vial.presentation.monitoring import MonitoringCenter
+
+        if not hasattr(self, "monitoring_center") or not self.monitoring_center.isVisible():
+            self.monitoring_center = MonitoringCenter(self)
+        self.monitoring_center.show()
+        self.monitoring_center.raise_()
+
+    def closeEvent(self, event):
+        if hasattr(self, "monitoring_center"):
+            self.monitoring_center.close()
+        super().closeEvent(event)
