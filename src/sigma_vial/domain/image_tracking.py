@@ -45,6 +45,7 @@ class ImageTracker:
         self.calibration = calibration or ImageCalibration()
         self.tracks: dict[str, ImageTrack] = {}
         self._next_id = 0
+        self.max_tracks = 512
         self.passage_count = 0
         self.last_time = -1.0
 
@@ -58,7 +59,7 @@ class ImageTracker:
             for key, t in self.tracks.items()
             if t.state != "finalizado" and timestamp - t.last_seen <= self.calibration.max_missing
         }
-        for detection in sorted(detections, key=lambda d: -(d.confidence or 0)):
+        for detection in sorted(detections, key=lambda d: -(d.confidence or 0))[: self.max_tracks]:
             candidates = []
             for key in available:
                 previous = self.tracks[key]
@@ -117,4 +118,7 @@ class ImageTracker:
                     if timestamp - track.last_seen > self.calibration.max_missing
                     else "perdido"
                 )
+        if len(self.tracks) > self.max_tracks:
+            recent = sorted(self.tracks.values(), key=lambda t: t.last_seen, reverse=True)
+            self.tracks = {t.identifier: t for t in recent[: self.max_tracks]}
         return list(self.tracks.values())

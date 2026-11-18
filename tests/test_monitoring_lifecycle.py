@@ -68,3 +68,12 @@ def test_closed_windows_are_deleted(qtbot):
     QApplication.processEvents()
     assert window.monitoring_center is None
     assert not window.findChildren(MonitoringCenter)
+
+
+def test_track_count_cap_does_not_touch_session_plate_registry():
+    tracker = ImageTracker()
+    tracker.max_tracks = 2
+    for index in range(5):
+        x = index * 1000
+        tracker.update([ImageDetection((x, 0, x + 10, 10), "car", 0.9)], index / 10, 100)
+        assert len(tracker.tracks) <= 2

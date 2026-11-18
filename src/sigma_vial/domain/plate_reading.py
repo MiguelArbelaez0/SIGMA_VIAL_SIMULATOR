@@ -50,7 +50,7 @@ class PlateConsensus:
             evidence.confirmed = ""
             return evidence
         if evidence.provisional == reading.text:
-            evidence.hits += 1
+            evidence.hits = min(self.required, evidence.hits + 1)
         else:
             evidence.provisional = reading.text
             evidence.hits = 1

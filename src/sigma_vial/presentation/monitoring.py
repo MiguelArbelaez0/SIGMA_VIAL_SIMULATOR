@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QPushButton,
     QSplitter,
     QVBoxLayout,
@@ -143,6 +144,22 @@ class MonitoringCenter(QDialog):
         self.running_video = False
         self.error = ""
         self.expanded = []
+        from sigma_vial.application.identification import IdentificationSession
+        from sigma_vial.infrastructure.plate_ocr import TesseractPlateReader
+
+        self.identification = IdentificationSession(owner.registry)
+        self.ocr_reader = TesseractPlateReader()
+        self.ocr_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sigma-ocr")
+        self.ocr_future = None
+        self.ocr_submitted_generation = -1
+        self.ocr_start = time.monotonic()
+        self.ocr_last_submit = -1.0
+        self.ocr_target = None
+        self.ocr_snapshot = None
+        self.ocr_displayed_track = None
+        self.external_crop = None
+        self.external_track = 0
+
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
         self.mode = QComboBox()
@@ -151,6 +168,7 @@ class MonitoringCenter(QDialog):
                 "Percepción simulada",
                 "Video local · píxeles",
                 "Captura del simulador · prueba de píxeles",
+                "Identificación · cámara trasera sintética / recorte OCR",
             )
         )
         self.mode.currentIndexChanged.connect(self.change_mode)
@@ -207,7 +225,46 @@ class MonitoringCenter(QDialog):
             expand.clicked.connect(lambda checked=False, a=access: self.expand(a))
             box.addWidget(expand)
             grid.addWidget(container, i // 2, i % 2)
+        self.camera_grid = grid_widget
         splitter.addWidget(grid_widget)
+        self.plate_panel = QWidget()
+        plate_layout = QVBoxLayout(self.plate_panel)
+        plate_controls = QHBoxLayout()
+        plate_controls.addWidget(QLabel("Cámara trasera por acceso:"))
+        self.plate_access = QComboBox()
+        self.plate_access.addItems([a.value for a in Access])
+        self.plate_access.currentIndexChanged.connect(self.reset_tracking)
+        plate_controls.addWidget(self.plate_access)
+        load_plate = QPushButton("Abrir recorte de placa (imagen)")
+        load_plate.clicked.connect(self.load_plate_image)
+        plate_controls.addWidget(load_plate)
+        live_plate = QPushButton("Volver a cámara sintética")
+        live_plate.clicked.connect(self.use_synthetic_camera)
+        plate_controls.addWidget(live_plate)
+        plate_layout.addLayout(plate_controls)
+        images = QHBoxLayout()
+        self.plate_picture = QLabel("Imagen de cámara")
+        self.plate_picture.setMinimumSize(320, 190)
+        self.plate_picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.plate_crop = QLabel("Recorte de placa")
+        self.plate_crop.setMinimumSize(220, 100)
+        self.plate_crop.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        images.addWidget(self.plate_picture, 2)
+        images.addWidget(self.plate_crop, 1)
+        plate_layout.addLayout(images)
+        self.plate_info = QLabel("Sin lectura")
+        self.plate_info.setWordWrap(True)
+        plate_layout.addWidget(self.plate_info)
+        self.plate_record = QLabel("Sin ficha: se consulta solo con texto OCR confirmado.")
+        self.plate_record.setWordWrap(True)
+        self.plate_record.setStyleSheet("background: #dcecf8; padding: 12px;")
+        plate_layout.addWidget(self.plate_record)
+        self.plate_events = QListWidget()
+        self.plate_events.setMaximumHeight(130)
+        plate_layout.addWidget(QLabel("Eventos de identificación (máximo 200):"))
+        plate_layout.addWidget(self.plate_events)
+        self.plate_panel.hide()
+        splitter.addWidget(self.plate_panel)
         self.detail = QLabel(
             "Selecciona un recuadro: trayectoria, primera/última "
             "observación y estado. Placas reales: Sin lectura "
@@ -228,6 +285,20 @@ class MonitoringCenter(QDialog):
 
     def reset_tracking(self):
         self.generation += 1
+        if hasattr(self, "identification"):
+            from sigma_vial.application.identification import IdentificationSession
+
+            self.identification = IdentificationSession(self.owner.registry)
+            self.ocr_start = time.monotonic()
+            self.ocr_last_submit = -1.0
+            self.ocr_target = None
+            self.ocr_displayed_track = None
+            if hasattr(self, "plate_events"):
+                self.plate_events.clear()
+                self.plate_info.setText("Sin lectura · nueva sesión de seguimiento")
+                self.plate_record.setText("Sin ficha: esperando texto OCR confirmado.")
+                self.plate_picture.clear()
+                self.plate_crop.clear()
         self.selected_track = None
         self.pixel_tracker = ImageTracker(
             ImageCalibration(
@@ -244,6 +315,8 @@ class MonitoringCenter(QDialog):
 
     def change_mode(self):
         self.error = ""
+        self.camera_grid.setVisible(self.mode.currentIndex() != 3)
+        self.plate_panel.setVisible(self.mode.currentIndex() == 3)
         for access, view in self.views.items():
             view.canvas.clear()
             self.captions[access].setText(
@@ -455,6 +528,9 @@ class MonitoringCenter(QDialog):
                 self.error = str(exc)
                 self.status.setText(f"Visión no disponible: {exc}")
             self.future = None
+        if mode == 3:
+            self.refresh_plate_camera()
+            return
         if mode == 0:
             self.simulated()
             return
@@ -503,6 +579,146 @@ class MonitoringCenter(QDialog):
                 "Abre un video local. El video grabado no responde a los semáforos."
             )
 
+    def load_plate_image(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Recorte para OCR: solo imagen, sin ficha asociada",
+            "",
+            "Imagen (*.png *.jpg *.bmp)",
+        )
+        if path:
+            self.set_plate_image(QImage(path))
+
+    def set_plate_image(self, image):
+        if image.isNull():
+            self.status.setText("Imagen no válida; no se procesa OCR.")
+            return
+        self.external_crop = image.copy()
+        self.external_track += 1
+        self.reset_tracking()
+        self.mode.setCurrentIndex(3)
+
+    def use_synthetic_camera(self):
+        self.external_crop = None
+        self.reset_tracking()
+        self.mode.setCurrentIndex(3)
+
+    def refresh_plate_camera(self):
+        from sigma_vial.presentation.plate_camera import PlateCameraFrame, image_png, rear_camera
+
+        # Poll first; every result belongs to a generation and to the captured track.
+        if self.ocr_future is not None and self.ocr_future.done():
+            try:
+                reading = self.ocr_future.result()
+                if self.ocr_submitted_generation == self.generation:
+                    snapshot = self.ocr_snapshot
+                    result = self.identification.observe(snapshot.camera, snapshot.track, reading)
+                    self.ocr_displayed_track = (snapshot.camera, snapshot.track)
+                    evidence = result.evidence
+                    self.plate_info.setText(
+                        f"Cámara: {snapshot.camera} · vehículo seguido: {snapshot.track} · "
+                        f"tiempo imagen: {snapshot.timestamp:.2f} s · "
+                        f"{snapshot.provenance}\n"
+                        f"{reading.status} · provisional: {evidence.provisional or '—'} "
+                        f"({evidence.hits}/3) · confianza OCR {reading.confidence:.1f}\n"
+                        f"Placa leída por OCR: {evidence.confirmed or 'Sin lectura confirmada'}"
+                    )
+                    event = result.event
+                    if event and event.record:
+                        row = event.record
+                        self.plate_record.setText(
+                            f"Ficha recuperada del registro: {row.plate} · {row.vehicle_type} · "
+                            f"{row.brand} · {row.model} · color {row.color} · "
+                            f"dimensiones {row.length:g} × {row.width:g} unidades simuladas"
+                        )
+                    else:
+                        self.plate_record.setText(
+                            event.message if event else "Sin ficha: esperando texto OCR confirmado."
+                        )
+                    if result.is_new_event:
+                        self.plate_events.addItem(
+                            f"{event.timestamp:.2f} s · {event.camera} · {event.track} · "
+                            f"{event.plate} · {event.message}"
+                        )
+                        if self.plate_events.count() > 200:
+                            self.plate_events.takeItem(0)
+                        self.plate_events.scrollToBottom()
+                    self.status.setText(
+                        "OCR local independiente del control semafórico. "
+                        "Confirmar texto no demuestra identidad real; datos del registro ficticios."
+                    )
+            except Exception as exc:
+                if self.ocr_submitted_generation == self.generation:
+                    from sigma_vial.domain.plate_reading import OCRReading
+
+                    self.identification.observe(
+                        self.ocr_snapshot.camera,
+                        self.ocr_snapshot.track,
+                        OCRReading(self.ocr_snapshot.timestamp),
+                    )
+                    self.ocr_displayed_track = (self.ocr_snapshot.camera, self.ocr_snapshot.track)
+                    self.plate_info.setText(f"Sin lectura · OCR no disponible: {exc}")
+                    self.plate_record.setText("Sin ficha: no se consulta sin lectura confirmada.")
+            self.ocr_future = None
+        if self.ocr_future is not None:
+            return  # One in-flight OCR job; no growing submission queue.
+        timestamp = time.monotonic() - self.ocr_start
+        if timestamp - self.ocr_last_submit < 0.3:
+            return
+        access = tuple(Access)[self.plate_access.currentIndex()]
+        if self.external_crop is not None:
+            snapshot = PlateCameraFrame(
+                self.external_crop,
+                QRectF(self.external_crop.rect()),
+                timestamp,
+                "imagen-importada",
+                f"imagen-{self.external_track}",
+                "Recorte de imagen importado por el usuario; sin metadatos del simulador",
+            )
+        else:
+            candidates = [
+                v
+                for v in self.owner.simulation.vehicles
+                if v.access is access and 0 <= v.position <= 270
+            ]
+            target = next((v for v in candidates if v.identifier == self.ocr_target), None)
+            target = target or max(candidates, key=lambda v: v.position, default=None)
+            self.ocr_target = target.identifier if target else None
+            snapshot = rear_camera(target, timestamp, f"rear-{access.name.lower()}")
+        if (snapshot.camera, snapshot.track) != self.ocr_displayed_track:
+            self.plate_info.setText(
+                f"Cámara {snapshot.camera} · vehículo seguido {snapshot.track or '—'} · "
+                "Sin lectura confirmada · procesando nueva imagen"
+            )
+            self.plate_record.setText("Sin ficha: esperando texto OCR confirmado.")
+        self.plate_picture.setPixmap(
+            QPixmap.fromImage(snapshot.image).scaled(
+                640,
+                360,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        self.plate_crop.setPixmap(
+            QPixmap.fromImage(snapshot.crop()).scaled(
+                300,
+                100,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        if snapshot.track is None:
+            self.plate_info.setText("Cámara sintética · Sin vehículo seguido · Sin lectura")
+            self.plate_record.setText("Sin ficha: no se consulta sin lectura confirmada.")
+            self.ocr_last_submit = timestamp
+            return
+        self.ocr_snapshot = snapshot
+        self.ocr_submitted_generation = self.generation
+        self.ocr_last_submit = timestamp
+        self.ocr_future = self.ocr_executor.submit(
+            self.ocr_reader.read, image_png(snapshot.crop()), timestamp
+        )
+
     def describe(self, track):
         self.selected_track = track
         self.detail.setText(
@@ -539,5 +755,6 @@ class MonitoringCenter(QDialog):
                 self.future.add_done_callback(lambda future: source.close())
         elif source:
             source.close()
+        self.ocr_executor.shutdown(wait=False, cancel_futures=True)
         self.executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)

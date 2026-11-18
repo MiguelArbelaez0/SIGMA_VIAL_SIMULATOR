@@ -164,8 +164,8 @@ salidas por carril, geometría individual de los cuatro cruces peatonales, calib
 de velocidades y políticas de espera bajo obstrucciones prolongadas. La demostración
 no representa seguridad vial certificada. Hardware ESP32 y semáforos físicos siguen
 fuera de alcance.
-No utiliza cámaras, IA, nube, bases de datos ni hardware. ESP32 y semáforos físicos
-se considerarán en una etapa posterior.
+Incluye percepción simulada, detección por píxeles opcional, OCR local y SQLite.
+No utiliza nube, cámaras físicas ni hardware ESP32.
 
 ## Ramas y próxima etapa
 
@@ -247,13 +247,15 @@ y luego rojo; no se habilita otra fase hasta recuperar las observaciones válida
 Quienes están comprometidos terminan de salir y los peatones siguen protegidos por
 el estado del mundo. Las últimas lecturas se conservan hasta la siguiente muestra,
 no indefinidamente como demanda válida. Pausar detiene el reloj, el movimiento y las
-lecturas; reiniciar limpia seguimientos, contadores y registro de placas.
+lecturas del control; reiniciar limpia seguimientos y contadores, pero conserva
+el registro SQLite. La cámara OCR tiene su propio reloj de observación: puede leer
+un vehículo detenido o la simulación pausada.
 
 Una futura fuente de imágenes implementará el mismo contrato, entregando detecciones,
 seguimientos, tiempos y disponibilidad. Puede usar tipo desconocido y confianza
 opcional; el contrato admite `confidence=None`. Debe aportar su propia lectura de
 peatones. El argumento de mundo del adaptador simulado puede ignorarse en una fuente
-externa. No se incorporan dependencias de visión ni hardware en esta etapa.
+externa. La visión opcional se documenta más adelante; no se incorpora hardware.
 
 `domain/catalog.py` es el catálogo Python local, ampliable y validado: identificador
 de modelo, tipo, marca/modelo ficticios, dimensiones, prestaciones y variante gráfica.
@@ -265,8 +267,9 @@ no deduce marca o modelo de una imagen.
 vehículos de cuatro ruedas y `ABC12D` para motos. No corresponden necesariamente a
 vehículos registrados. El registro de sesión impide reutilizarlos incluso después
 de salir de escena, y una semilla reproduce la secuencia. Incorporación manual,
-llegadas automáticas y escenarios usan el mismo servicio. Reiniciar puede reutilizar
-la secuencia porque empieza una sesión nueva. Las placas están en los datos del
+llegadas automáticas y escenarios usan el mismo servicio. Con el registro SQLite,
+reiniciar o volver a abrir la aplicación evita también duplicados de sesiones anteriores.
+El motor aislado sin registro conserva la secuencia reproducible por semilla. Las placas están en los datos del
 vehículo, en amarillo/negro cuando la escala lo permite y completas en la selección.
 El sensor las etiqueta **Lectura simulada**. Un sistema externo necesitará un módulo
 independiente de lectura de placas; detectar, contar y seguir no depende de leerlas.
@@ -369,8 +372,9 @@ La ruta real de imágenes es opcional. Desde la raíz del repositorio:
   No se calcula velocidad al primer avistamiento; se confirma con otra observación.
 - Solo se exponen las categorías del modelo: automóvil, motocicleta, bus y camión.
   No se deducen marca/modelo ni se muestran confianzas inventadas. Placas: **Sin
-  lectura**, porque no hay un módulo de detección de placa/OCR. La lectura sintética
-  del escenario conserva su etiqueta **Lectura simulada** y no completa videos.
+  lectura** en el laboratorio YOLOX: este detector no localiza ni lee placas.
+  El modo de identificación separado incorpora OCR sobre recortes explícitos.
+  La lectura del escenario conserva su etiqueta **Lectura simulada** y no completa videos.
 
 `ImageSource`/`ImageFrame` permiten incorporar posteriormente una fuente externa.
 El detector y `ImageTracker` reciben exclusivamente imágenes/tiempos y calibración;
@@ -417,7 +421,7 @@ precisión con cámaras representativas, ni una prueba humana continua de operac
 
 ### Monitoreo: sesiones y retención
 
-Cada cambio de seguimiento, modo o sesión invalida los trabajos anteriores mediante una generación. Un resultado pendiente nunca restaura el reloj de la sesión anterior. Las ventanas se destruyen al cerrarlas; los puntos por trayectoria se limitan a 128 y los seguimientos sin observaciones caducan a los 10 segundos. Los mapas de cámaras simuladas retienen únicamente vehículos presentes; el contador acumulado se conserva. El registro de placas usadas es independiente y no se poda con los historiales.
+Cada cambio de seguimiento, modo o sesión invalida los trabajos anteriores mediante una generación. Un resultado pendiente nunca restaura el reloj de la sesión anterior. Las ventanas se destruyen al cerrarlas; los puntos por trayectoria se limitan a 128 y los seguimientos sin observaciones caducan a los 10 segundos. El seguidor por píxeles mantiene como máximo 512 pistas/detecciones por imagen (prioriza detecciones de mayor confianza; los contadores acumulados se mantienen). Los mapas de cámaras simuladas retienen únicamente vehículos presentes; el contador acumulado se conserva. El registro de placas usadas es independiente y no se poda con los historiales.
 
 ### Registro persistente de vehículos ficticios
 
@@ -442,3 +446,17 @@ Evaluación reproducible: `python tools/evaluate_ocr.py`; imágenes y resultados
 `IdentificationSession` recibe cámara, ID de seguimiento opaco y lectura OCR. Solo después de tres observaciones consecutivas consulta SQLite mediante igualdad exacta de placa (sin búsqueda por ID, modelo o marca ni correcciones). Una coincidencia distingue “Placa leída por OCR” de “Ficha recuperada del registro”; un texto válido desconocido produce “Placa leída, vehículo no registrado”. Sin lectura no hay consulta ni ficha actual. Las lecturas son hipótesis, no una garantía de identidad: tres errores iguales también podrían confirmar una placa incorrecta.
 
 Eventos acotados a 200, caché de consultas a 512 / 60 s; el mismo seguimiento y placa no repite evento ni consulta por fotograma dentro de ese intervalo. La identidad de seguimiento incluye cámara; reiniciar la sesión limpia evidencia y eventos, nunca el registro persistente.
+
+### Demostración visible de identificación
+
+1. Abrir **Centro de monitoreo**, seleccionar **Identificación · cámara trasera sintética / recorte OCR**.
+2. Elegir acceso y añadir vehículos desde el formulario manual, o activar llegadas automáticas.
+3. La cámara sigue un vehículo en cobertura 0–270 unidades, manteniéndolo hasta salir; después pasa al siguiente. Vista trasera sintética y recorte geométrico se muestran juntos. La cámara emplea un reloj de observación independiente del reloj del mundo, por lo que también lee vehículos detenidos o con simulación pausada.
+4. Consultar seguimiento, cámara, tiempo, texto provisional, confianza del motor, confirmación, ficha y evento. La ficha corresponde exclusivamente al texto confirmado: nunca a la selección interna del plano. Cambiar vehículo limpia la ficha visible hasta obtener una lectura del nuevo seguimiento.
+5. **Abrir recorte de placa (imagen)** permite procesar una imagen independiente: toda la imagen se considera recorte aportado por el usuario, sin localización automática ni ficha interna asociada. **Volver a cámara sintética** restaura la fuente renderizada. Una imagen importada fija se observa varias veces; esto comprueba consistencia del motor, no evidencia visual independiente de varios fotogramas reales.
+
+Hay un único trabajo OCR en vuelo, con timeout de 4 s y generación de sesión; reinicio, cambio de fuente o cámara invalidan resultados pendientes. La cola de trabajos no crece. El trabajador recibe exclusivamente PNG y tiempo. Los errores del lector muestran “Sin lectura” y no impiden al controlador servir tráfico. En el modo YOLOX de video se conserva “Sin lectura”: conectar detección/localización de placas en video real requiere calibración y un localizador adicional; la demostración actual admite recortes proporcionados, no reconocimiento integral de una cámara física.
+
+Validación de esta etapa: 161 pruebas, incluyendo motor, interfaz, registro en procesos separados, OCR real por píxeles, textos diferentes a la placa interna, negativos, consultas exactas, deduplicación, fallo de trabajador y resultado t=50 rechazado tras reinicio. Ruff y formato se verifican aparte. Ejecución nativa programada en backend `windows`, sin offscreen: apertura/cierre, lectura y ficha reales por Tesseract, inicio/pausa, velocidad 2×, movimiento, zoom repetido, reinicio durante monitoreo y segunda identificación desde otro acceso. Revisión de capturas en tamaño 1150×850 y reducido 850×650. Un temporizador del motor y una conexión timeout; el monitor usa su propio temporizador. No equivale a observación humana continua ni a validación con cámaras físicas.
+
+![Cámara sintética, OCR real y ficha recuperada por placa](docs/identification-native.png)
