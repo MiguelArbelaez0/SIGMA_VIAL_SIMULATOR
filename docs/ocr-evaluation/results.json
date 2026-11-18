@@ -2,7 +2,7 @@
   "scope": "Motor real sobre recortes sintéticos. NO precisión de cámaras reales.",
   "version": "tesseract v5.4.0.20240606",
   "model_sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
-  "exact": 16,
+  "exact": 17,
   "total": 18,
   "cases": [
     {
@@ -10,160 +10,160 @@
       "expected": "ACK61D",
       "actual": "ACK61D",
       "raw": "ACK61D",
-      "confidence": 92.126938,
+      "confidence": 92.271935,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 117.72
+      "milliseconds": 108.12
     },
     {
       "image": "motorcycle-230.png",
       "expected": "ACK61D",
       "actual": "ACK61D",
       "raw": "ACK61D",
-      "confidence": 92.178238,
+      "confidence": 91.230949,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 117.46
+      "milliseconds": 105.94
     },
     {
       "image": "compact-0.png",
       "expected": "NSD900",
-      "actual": "",
-      "raw": "NSD960",
-      "confidence": 17.01059,
-      "status": "No legible",
-      "exact": false,
-      "milliseconds": 114.53
+      "actual": "NSD900",
+      "raw": "NSD900",
+      "confidence": 88.051819,
+      "status": "Legible",
+      "exact": true,
+      "milliseconds": 105.96
     },
     {
       "image": "compact-230.png",
       "expected": "NSD900",
       "actual": "",
-      "raw": "NSD960",
-      "confidence": 21.789658,
+      "raw": "NSD9080",
+      "confidence": 26.774399,
       "status": "No legible",
       "exact": false,
-      "milliseconds": 114.23
+      "milliseconds": 105.72
     },
     {
       "image": "sedan-0.png",
       "expected": "GTN251",
       "actual": "GTN251",
       "raw": "GTN251",
-      "confidence": 90.932129,
+      "confidence": 90.020096,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 163.05
+      "milliseconds": 106.23
     },
     {
       "image": "sedan-230.png",
       "expected": "GTN251",
       "actual": "GTN251",
       "raw": "GTN251",
-      "confidence": 91.494598,
+      "confidence": 90.797043,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 137.05
+      "milliseconds": 107.51
     },
     {
       "image": "suv-0.png",
       "expected": "UXI235",
       "actual": "UXI235",
       "raw": "UXI235",
-      "confidence": 69.094025,
+      "confidence": 72.672714,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 119.28
+      "milliseconds": 106.42
     },
     {
       "image": "suv-230.png",
       "expected": "UXI235",
       "actual": "UXI235",
       "raw": "UXI235",
-      "confidence": 70.481186,
+      "confidence": 65.850632,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 113.55
+      "milliseconds": 108.85
     },
     {
       "image": "van-0.png",
       "expected": "GSK600",
       "actual": "GSK600",
       "raw": "GSK600",
-      "confidence": 67.908737,
+      "confidence": 88.740875,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 127.06
+      "milliseconds": 107.54
     },
     {
       "image": "van-230.png",
       "expected": "GSK600",
       "actual": "GSK600",
       "raw": "GSK600",
-      "confidence": 87.134811,
+      "confidence": 71.556534,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 137.36
+      "milliseconds": 119.4
     },
     {
       "image": "bus-0.png",
       "expected": "EDD730",
       "actual": "EDD730",
       "raw": "EDD730",
-      "confidence": 80.91748,
+      "confidence": 75.417213,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 124.31
+      "milliseconds": 118.35
     },
     {
       "image": "bus-230.png",
       "expected": "EDD730",
       "actual": "EDD730",
       "raw": "EDD730",
-      "confidence": 89.973946,
+      "confidence": 81.80278,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 130.74
+      "milliseconds": 117.06
     },
     {
       "image": "truck-0.png",
       "expected": "NLV243",
       "actual": "NLV243",
       "raw": "NLV243",
-      "confidence": 64.570992,
+      "confidence": 89.829758,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 130.32
+      "milliseconds": 114.21
     },
     {
       "image": "truck-230.png",
       "expected": "NLV243",
       "actual": "NLV243",
       "raw": "NLV243",
-      "confidence": 92.832634,
+      "confidence": 84.129402,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 120.9
+      "milliseconds": 103.98
     },
     {
       "image": "large_truck-0.png",
       "expected": "IVM225",
       "actual": "IVM225",
       "raw": "IVM225",
-      "confidence": 90.16304,
+      "confidence": 91.544861,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 116.41
+      "milliseconds": 105.15
     },
     {
       "image": "large_truck-230.png",
       "expected": "IVM225",
       "actual": "IVM225",
       "raw": "IVM225",
-      "confidence": 90.458435,
+      "confidence": 88.414169,
       "status": "Legible",
       "exact": true,
-      "milliseconds": 113.58
+      "milliseconds": 105.44
     },
     {
       "image": "blank.png",

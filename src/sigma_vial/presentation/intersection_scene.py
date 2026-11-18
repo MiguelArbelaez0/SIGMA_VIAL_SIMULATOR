@@ -25,7 +25,7 @@ class IntersectionScene(QGraphicsScene):
         self.approaches = initial_approaches()
         extent = self.geometry.arm_extent + self.geometry.scene_margin
         self.setSceneRect(-extent, -extent, 2 * extent, 2 * extent)
-        self.setBackgroundBrush(QColor("#e7eee9"))
+        self.setBackgroundBrush(QColor("#718550"))
         add_pavement(self, self.geometry)
 
         self.pedestrian_signals = {}
@@ -40,6 +40,7 @@ class IntersectionScene(QGraphicsScene):
             arm = self.addLine(*start, *end, QPen(QColor("#7c8b98"), 5))
             arm.setZValue(4)
             light = TrafficLightItem(access)
+            light.setScale(0.65)
             self.addItem(light)
             light.setPos(*self.geometry.signal_position(access))
             self.traffic_lights[access] = light

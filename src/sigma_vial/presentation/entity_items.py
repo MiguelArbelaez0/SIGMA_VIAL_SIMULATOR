@@ -1,7 +1,7 @@
 """Vehículos y peatones vectoriales, ligeros y persistentes en la escena."""
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsObject, QStyleOptionGraphicsItem, QWidget
 
 from sigma_vial.domain.simulation import VehicleType
@@ -32,8 +32,17 @@ class VehicleGraphicsItem(QGraphicsObject):
         self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None
     ) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor("#26374a"), 1.2))
-        painter.setBrush(self.color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 70))
+        painter.drawRoundedRect(
+            QRectF(-self.length / 2 + 2, -self.width / 2 + 3, self.length, self.width), 5, 5
+        )
+        painter.setPen(QPen(self.color.darker(160), 1.2))
+        finish = QLinearGradient(0, -self.width / 2, 0, self.width / 2)
+        finish.setColorAt(0, self.color.lighter(135))
+        finish.setColorAt(0.4, self.color)
+        finish.setColorAt(1, self.color.darker(130))
+        painter.setBrush(finish)
         painter.drawRoundedRect(
             QRectF(-self.length / 2, -self.width / 2, self.length, self.width), 5, 5
         )

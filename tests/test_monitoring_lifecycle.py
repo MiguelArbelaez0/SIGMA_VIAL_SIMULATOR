@@ -67,7 +67,10 @@ def test_closed_windows_are_deleted(qtbot):
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     QApplication.processEvents()
     assert window.monitoring_center is None
-    assert not window.findChildren(MonitoringCenter)
+    # The dashboard deliberately owns one live embedded camera controller.
+    # Closed floating windows must still be deleted, not accumulated.
+    assert window.findChildren(MonitoringCenter) == [window.camera_card.controller]
+    assert window.camera_card.controller.embedded
 
 
 def test_track_count_cap_does_not_touch_session_plate_registry():

@@ -1,8 +1,9 @@
 """Ventana SIGMA con controles generales y formularios de llegada independientes."""
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -14,7 +15,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
-    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -39,57 +39,16 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("SIGMA VIAL")
-        self.resize(1240, 860)
+        self.resize(1580, 980)
         self.setMinimumSize(800, 600)
-        self.setStyleSheet("""
-            QWidget { background: white; color: #20334d; }
-            QMainWindow, QWidget#root { background: #edf2f8; color: #20334d; }
-            QLabel { color: #20334d; font-family: 'Segoe UI'; font-size: 14px; }
-            QFrame#header QLabel { background: transparent; }
-            QFrame#header { background: #11243e; border-radius: 12px; }
-            QLabel#title { color: white; font-size: 27px; font-weight: 700; }
-            QLabel#company { color: #a8c7ec; font-size: 12px; font-weight: 600; }
-            QLabel#status { color: #d7e9ff; background: #223c5e;
-                border-radius: 8px; padding: 10px; font-size: 13px; }
-            QFrame#card { background: white; border: 1px solid #d6e0ec; border-radius: 12px; }
-            QLabel#section { color: #1c416f; font-size: 16px; font-weight: 700; }
-            QLabel#muted { color: #63758b; font-size: 12px; }
-            QLabel#signal { color: #a6283b; background: #fff0f2;
-                padding: 9px; border-radius: 6px; font-size: 14px; }
-            QPushButton { color: #1a477f; background: #edf4ff; border: 1px solid #c5d9f3;
-                padding: 9px; border-radius: 7px; font-family: 'Segoe UI'; font-size: 13px; }
-            QPushButton:hover { background: #dceaff; border-color: #659ada; }
-            QPushButton:pressed { background: #c9defa; }
-            QPushButton:focus { border: 2px solid #326db7; }
-            QPushButton#primaryAction { color: white; background: #1768ad;
-                border-color: #1768ad; font-weight: 700; }
-            QPushButton#primaryAction:hover { background: #0f568f; }
-            QLabel#overview { background: #edf5ff; border: 1px solid #d0e3f8;
-                border-radius: 8px; padding: 11px; font-size: 13px; font-weight: 600; }
-            QToolButton { color: #1a477f; background: #f5f8fc; border: 1px solid #d6e0ec;
-                padding: 9px; border-radius: 7px; text-align: left; font-weight: 600; }
-            QComboBox, QDoubleSpinBox, QSpinBox { color: #20334d; background: white;
-                border: 1px solid #c5d9f3; padding: 5px 8px; border-radius: 6px;
-                min-height: 24px; }
-            QComboBox::drop-down { border: none; width: 22px; }
-            QComboBox QAbstractItemView { color: #20334d; background: white;
-                selection-background-color: #dceaff; }
-            QCheckBox { font-size: 12px; padding: 2px; }
-            QTabWidget::pane { background: white; border: 1px solid #d6e0ec; }
-            QTabBar::tab { background: #edf4ff; color: #1a477f;
-                padding: 7px 5px; font-size: 12px; border: 1px solid #d6e0ec; }
-            QTabBar::tab:selected { background: #dceaff; font-weight: 600; }
-            QScrollArea { border: none; background: transparent; }
-            QScrollBar:vertical { background: #e4ebf4; width: 8px; margin: 0; }
-            QScrollBar::handle:vertical { background: #9bb0cb; min-height: 32px;
-                border-radius: 4px; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-        """)
+        from sigma_vial.presentation.dashboard_style import STYLE
+
+        self.setStyleSheet(STYLE)
         root = QWidget()
         root.setObjectName("root")
         outer = QVBoxLayout(root)
-        outer.setContentsMargins(16, 16, 16, 12)
-        outer.setSpacing(12)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
         outer.addWidget(self._header())
         geometry = IntersectionGeometry()
         config = SimulationConfig(
@@ -116,14 +75,26 @@ class MainWindow(QMainWindow):
         self.vehicle_items = {}
         self.pedestrian_items = {}
         outer.addWidget(self._general_controls())
-        body = QHBoxLayout()
+        from sigma_vial.presentation.dashboard_components import DashboardBody
+
+        self.body_content = DashboardBody()
+        self.body = QBoxLayout(QBoxLayout.Direction.LeftToRight, self.body_content)
+        body = self.body
+        body.setContentsMargins(12, 14, 12, 14)
         body.setSpacing(16)
         scene_card = QFrame()
+        self.scene_card = scene_card
         scene_card.setObjectName("card")
         scene_layout = QVBoxLayout(scene_card)
-        scene_layout.setContentsMargins(16, 16, 16, 16)
+        scene_layout.setContentsMargins(14, 12, 14, 12)
         view_bar = QHBoxLayout()
-        view_bar.addWidget(text_label("Intersección · Vista superior", "section"), 1)
+        from sigma_vial.presentation.dashboard_components import line_icon, soften_card
+
+        soften_card(scene_card)
+        road_icon = QLabel()
+        road_icon.setPixmap(line_icon("road").pixmap(28, 28))
+        view_bar.addWidget(road_icon)
+        view_bar.addWidget(text_label("Intersección en vivo", "section"), 1)
         for title, action in (
             ("−", self.intersection_view.zoom_out),
             ("Restablecer", self.intersection_view.reset_view),
@@ -134,25 +105,77 @@ class MainWindow(QMainWindow):
             view_bar.addWidget(button)
         scene_layout.addLayout(view_bar)
         scene_layout.addWidget(self.intersection_view, 1)
-        scene_layout.addWidget(
-            text_label("Movimientos rectos · Circulación por la derecha", "muted")
-        )
-        body.addWidget(scene_card, 1)
-        body.addWidget(self._sidebar())
-        outer.addLayout(body, 1)
+        summary_row = QHBoxLayout()
+        self.ns_summary = text_label("N–S: 0 vehículos", "summary")
+        self.ew_summary = text_label("O–O: 0 vehículos", "summary")
+        self.ped_summary = text_label("0 peatones", "summary")
+        self.overview = text_label("", "decision")
+        for label in (self.ns_summary, self.ew_summary, self.ped_summary):
+            summary_row.addWidget(label, 1)
+        summary_row.addWidget(self.overview, 2)
+        scene_layout.addLayout(summary_row)
+        body.addWidget(scene_card, 2)
+        self.side_panel = self._sidebar()
+        body.addWidget(self.side_panel, 1)
+        self.body_scroll = self._scroll_content(self.body_content)
+        self.body_scroll.setObjectName("bodyScroll")
+        outer.addWidget(self.body_scroll, 1)
         self.setCentralWidget(root)
         self._refresh_simulation()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not hasattr(self, "body"):
+            return
+        compact = self.width() < 1100
+        self.body.setDirection(
+            QBoxLayout.Direction.TopToBottom if compact else QBoxLayout.Direction.LeftToRight
+        )
+        self.body_content.setMinimumHeight(1320 if compact else 0)
+        self.scene_card.setMinimumHeight(500 if compact else 0)
+        self.side_panel.setMinimumHeight(760 if compact else 0)
+        self.subtitle.setVisible(not compact)
+        self.tabs.setMaximumHeight(320 if self.tabs.currentIndex() else 205)
+
+    def _highlight_camera_target(self, snapshot):
+        from PySide6.QtGui import QPen
+
+        if not hasattr(self, "camera_target"):
+            self.camera_target = self.intersection_scene.addRect(
+                QRectF(), QPen(QColor("#00d7ac"), 3)
+            )
+            self.camera_target.setZValue(30)
+        identifier = snapshot.track.rsplit("-vehicle-", 1)[-1] if snapshot.track else ""
+        self.camera_target_id = int(identifier) if identifier.isdigit() else None
+        item = self.vehicle_items.get(self.camera_target_id)
+        self.camera_target.setVisible(item is not None)
+        if item is not None:
+            self.camera_target.setRect(item.sceneBoundingRect().adjusted(-5, -5, 5, 5))
 
     def _header(self) -> QFrame:
         header = QFrame()
         header.setObjectName("header")
         layout = QHBoxLayout(header)
         layout.setContentsMargins(22, 12, 22, 12)
+        from sigma_vial.presentation.dashboard_components import SigmaMark
+
+        layout.addWidget(SigmaMark())
         brand = QVBoxLayout()
-        brand.setSpacing(4)
+        brand.setSpacing(0)
         brand.addWidget(text_label("SIGMA VIAL", "title"))
         brand.addWidget(text_label("SIGMA SOFTWARE SOLUTIONS", "company"))
-        layout.addLayout(brand, 1)
+        layout.addLayout(brand)
+        self.subtitle = text_label(
+            "Simulación inteligente de tráfico e identificación de placas", "subtitle"
+        )
+        layout.addWidget(self.subtitle, 1)
+        self.status_dot = QLabel("●")
+        self.status_dot.setStyleSheet("color: #94a8bf; font-size: 25px;")
+        layout.addStretch(1)
+        layout.addWidget(self.status_dot)
+        self.status_label = text_label("Vista inicial · Simulación detenida", "status")
+        self.status_label.setFixedWidth(190)
+        layout.addWidget(self.status_label)
         return header
 
     def _toggle_running(self) -> None:
@@ -220,6 +243,11 @@ class MainWindow(QMainWindow):
             }
             item.setPos(*positions[vehicle.access])
 
+        if hasattr(self, "camera_target"):
+            target = self.vehicle_items.get(getattr(self, "camera_target_id", None))
+            self.camera_target.setVisible(target is not None)
+            if target is not None:
+                self.camera_target.setRect(target.sceneBoundingRect().adjusted(-5, -5, 5, 5))
         active = {person.identifier for person in self.simulation.pedestrians}
         for identifier in self.pedestrian_items.keys() - active:
             self.intersection_scene.removeItem(self.pedestrian_items.pop(identifier))
@@ -285,11 +313,22 @@ class MainWindow(QMainWindow):
         ew_pending = sim.waiting(Access.EAST) + sim.waiting(Access.WEST)
         crossing = sum(p.walking for p in sim.pedestrians)
         pedestrian_waits = [p.wait for p in sim.pedestrians if not p.walking]
-        self.overview.setText(
-            f"{sim.phase.value} · {sim.time:.1f} s\n"
-            f"Esperando N–S: {ns_pending} · O–O: {ew_pending}\n"
-            f"Peatones: {sim.pedestrian_waiting()} esperando / {crossing} cruzando\n"
-            f"{sim.decision}"
+        self.ns_summary.setText(f"N–S: {sim.axis_demand('ns')} vehículos")
+        self.ew_summary.setText(f"O–O: {sim.axis_demand('ew')} vehículos")
+        self.ped_summary.setText(f"{sim.pedestrian_waiting()} peatones esperando")
+        pending = sim._pending_phase
+        title = f"Próximo turno: {pending.value}" if pending else sim.phase.value
+        self.overview.setText(f"{title}\n{sim.decision}")
+        self.overview.setToolTip(
+            f"En cola N–S: {ns_pending} / O–O: {ew_pending} · {crossing} peatones cruzando"
+        )
+        seconds = int(sim.time)
+        self.clock_label.setText(
+            f"Reloj simulado: {seconds // 3600:02}:{seconds // 60 % 60:02}:{seconds % 60:02}"
+        )
+        self.status_dot.setStyleSheet(
+            f"color: {'#12c990' if sim.running else '#f1bd54' if self.has_started else '#94a8bf'};"
+            "font-size: 25px;"
         )
         ns = (Access.NORTH, Access.SOUTH)
         ew = (Access.EAST, Access.WEST)
@@ -331,16 +370,23 @@ class MainWindow(QMainWindow):
         self._clear_entity_items()
         self._sync_rate_fields()
         self._refresh_simulation()
+        self.camera_card.controller.reset_tracking()
+        self.camera_card.reset()
+        if hasattr(self, "camera_target"):
+            self.camera_target.hide()
 
     def _clear_entity_items(self) -> None:
         for item in (*self.vehicle_items.values(), *self.pedestrian_items.values()):
             self.intersection_scene.removeItem(item)
+        if hasattr(self, "camera_target"):
+            self.camera_target.hide()
         self.vehicle_items.clear()
         self.pedestrian_items.clear()
 
     def _load_scenario(self) -> None:
         self.simulation_timer.stop()
         self._clear_entity_items()
+        self.camera_card.controller.reset_tracking()
         self.simulation.load_scenario(self.scenario_combo.currentData())
         self._set_sensor_interval(self.sensor_interval.value())
         self._sync_entities()
@@ -367,9 +413,9 @@ class MainWindow(QMainWindow):
 
     def _general_controls(self) -> QFrame:
         bar = QFrame()
-        bar.setObjectName("card")
+        bar.setObjectName("controls")
         row = QHBoxLayout(bar)
-        row.setContentsMargins(12, 8, 12, 8)
+        row.setContentsMargins(22, 10, 22, 10)
         self.start_button = QPushButton("Iniciar")
         self.start_button.setObjectName("primaryAction")
         self.start_button.setMinimumWidth(90)
@@ -384,8 +430,8 @@ class MainWindow(QMainWindow):
             self.speed.addItem(f"{value:g}×", value)
         self.speed.setCurrentIndex(1)
         row.addWidget(self.speed)
-        self.status_label = text_label("Vista inicial · Simulación detenida", "muted")
-        row.addWidget(self.status_label, 1)
+        self.clock_label = text_label("Reloj simulado: 00:00:00", "clock")
+        row.addWidget(self.clock_label, 1)
         monitoring = QPushButton("Centro de monitoreo")
         monitoring.clicked.connect(self._open_monitoring)
         row.addWidget(monitoring)
@@ -420,17 +466,35 @@ class MainWindow(QMainWindow):
 
     def _sidebar(self) -> QWidget:
         panel = QFrame()
-        panel.setObjectName("card")
+        panel.setObjectName("sidePanel")
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        self.overview = text_label("", "overview")
-        layout.addWidget(self.overview)
-        self.tabs = QTabWidget()
-        self.tabs.setMinimumHeight(100)
-        self.tabs.addTab(self._automatic_form(), "Tráfico automático")
-        self.tabs.addTab(self._manual_form(), "Agregar manualmente")
-        layout.addWidget(self.tabs, 1)
+        from sigma_vial.presentation.dashboard_components import DashboardTabs
+
+        self.tabs = DashboardTabs()
+        self.tabs.setMinimumHeight(165)
+        self.tabs.tabBar().setExpanding(True)
+        self.tabs.currentChanged.connect(
+            lambda index: self.tabs.setMaximumHeight(320 if index else 205)
+        )
+        self.tabs.addTab(self._automatic_form(), "Automático")
+        self.tabs.addTab(self._manual_form(), "Agregar")
+        automatic_card = QFrame()
+        automatic_card.setObjectName("card")
+        from sigma_vial.presentation.dashboard_components import soften_card
+
+        soften_card(automatic_card)
+        automatic_layout = QVBoxLayout(automatic_card)
+        automatic_layout.setContentsMargins(12, 8, 12, 8)
+        automatic_layout.addWidget(self.tabs)
+        automatic_layout.addWidget(text_label("ⓘ  Los semáforos deciden automáticamente.", "muted"))
+        layout.addWidget(automatic_card)
+        from sigma_vial.presentation.camera_card import CameraCard
+
+        self.camera_card = CameraCard(self)
+        self.camera_card.controller.framePublished.connect(self._highlight_camera_target)
+        layout.addWidget(self.camera_card, 1)
         diagnostics = QWidget()
         info_layout = QVBoxLayout(diagnostics)
         info_layout.setContentsMargins(0, 0, 0, 0)
@@ -497,9 +561,9 @@ class MainWindow(QMainWindow):
             button.setStyleSheet("padding: 5px 8px; font-size: 12px;")
         diagnostic_scroll = self._scroll_content(diagnostics)
         diagnostic_scroll.setMinimumHeight(70)
-        diagnostic_scroll.setMaximumHeight(115)
-        layout.addWidget(diagnostic_scroll)
-        panel.setFixedWidth(350)
+        diagnostic_scroll.setMaximumHeight(220)
+        self._fold(layout, "Herramientas: detalles, sensores y pruebas", diagnostic_scroll)
+        panel.setMinimumWidth(330)
         return panel
 
     def _automatic_form(self):
@@ -507,7 +571,9 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(content)
         layout.setContentsMargins(8, 10, 8, 10)
         layout.setSpacing(8)
-        self.automatic_toggle = QCheckBox("Generar tráfico automáticamente")
+        from sigma_vial.presentation.dashboard_components import TrafficSwitch
+
+        self.automatic_toggle = TrafficSwitch("Generar tráfico automáticamente")
         self.automatic_toggle.setChecked(self.simulation.automatic_generation)
         self.automatic_toggle.toggled.connect(self._set_automatic)
         layout.addWidget(self.automatic_toggle)
@@ -527,8 +593,13 @@ class MainWindow(QMainWindow):
                 "Personalizado",
             )
         )
-        form.addRow(text_label("Perfil", "muted"))
-        form.addRow(self.profile_combo)
+        form.addRow("Perfil de tráfico", self.profile_combo)
+        layout.addLayout(form)
+        self.advanced_panel = QWidget()
+        advanced = QVBoxLayout(self.advanced_panel)
+        rates_form = QFormLayout()
+        rates_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        form = rates_form
         self.demand_controls = {}
         for access in Access:
             rate = QDoubleSpinBox()
@@ -560,9 +631,7 @@ class MainWindow(QMainWindow):
         self.heavy_share.setSuffix(" %")
         self.heavy_share.valueChanged.connect(self._set_mix)
         form.addRow("Buses/camiones", self.heavy_share)
-        layout.addLayout(form)
-        self.advanced_panel = QWidget()
-        advanced = QVBoxLayout(self.advanced_panel)
+        advanced.addLayout(form)
         advanced.addWidget(
             text_label(
                 "Al desactivar: se congela el progreso de nuevas llegadas. "
@@ -573,7 +642,6 @@ class MainWindow(QMainWindow):
         )
         self._fold(layout, "Ajustes avanzados", self.advanced_panel)
         self.profile_combo.currentIndexChanged.connect(self._apply_profile)
-        layout.addStretch()
         return self._scroll_content(content)
 
     def _manual_form(self):
@@ -751,6 +819,9 @@ class MainWindow(QMainWindow):
         self.monitoring_center.raise_()
 
     def closeEvent(self, event):
+        self.simulation_timer.stop()
+        if self.camera_card.controller is not None:
+            self.camera_card.controller.close()
         if getattr(self, "monitoring_center", None) is not None:
             self.monitoring_center.close()
         super().closeEvent(event)

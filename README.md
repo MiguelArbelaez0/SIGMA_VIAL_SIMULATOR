@@ -1,7 +1,12 @@
 # SIGMA VIAL
 
-Aplicación de escritorio de **SIGMA SOFTWARE SOLUTIONS** para una futura simulación
-vial virtual. Estado actual: entorno, interfaz vectorial y primera simulación virtual local ejecutable.
+Aplicación de escritorio de **SIGMA SOFTWARE SOLUTIONS** con simulación vial local,
+control por demanda, percepción simulada e identificación por OCR y registro SQLite.
+
+![Interfaz actual de SIGMA VIAL: simulación e identificación por placa](docs/dashboard.png)
+
+La captura es de la aplicación real en Windows, con una lectura de Tesseract y una
+ficha recuperada del registro ficticio. No es una imagen generada ni un fondo estático.
 
 ## Preparación en Windows / PowerShell
 
@@ -439,7 +444,7 @@ Motor [Tesseract](https://github.com/tesseract-ocr/tesseract) y [modelos eng](ht
 
 `TesseractPlateReader.read(png, timestamp)` solo recibe bytes y tiempo (configuración: ejecutable, tessdata, confianza y timeout). Usa LSTM eng, PSM 7, alfabeto alfanumérico y acepta únicamente formatos colombianos a partir de confianza 40. No sustituye caracteres ambiguos, consulta catálogo ni accede a placas del motor. Sin imagen: “Sin lectura”; texto inválido o baja confianza: “No legible”. La confirmación exige tres observaciones consecutivas iguales con tiempos distintos; se invalida con lectura diferente o fallida y caduca tras 10 s. YOLOX sigue siendo detector de vehículos, sin OCR.
 
-Evaluación reproducible: `python tools/evaluate_ocr.py`; imágenes y resultados en `docs/ocr-evaluation`. Motor real: 14/16 recortes con placa exactos; dos rechazos de NSD900 (texto bruto NSD960, confianza < 40), más 2/2 negativos sin placa aceptada. Son ocho textos sintéticos del catálogo de tipos en dos posiciones, no dieciséis placas independientes ni una medición con cámaras reales. Los fallos quedan publicados; no se corrigen usando el texto esperado. La suite separa la prueba real (se omite explícitamente si falta Tesseract) de pruebas de consenso con dobles.
+Evaluación reproducible: `python tools/evaluate_ocr.py`; imágenes y resultados en `docs/ocr-evaluation`. Motor real con el renderizador actual: 15/16 recortes con placa exactos; un rechazo de NSD900 a posición 230 (texto bruto NSD9080, confianza 26,77), más 2/2 negativos sin placa aceptada. Son ocho textos sintéticos del catálogo de tipos en dos posiciones, no dieciséis placas independientes ni una medición con cámaras reales. Los fallos quedan publicados; no se corrigen usando el texto esperado. La suite separa la prueba real (se omite explícitamente si falta Tesseract) de pruebas de consenso con dobles.
 
 ### Identificación por texto confirmado
 
@@ -460,3 +465,62 @@ Hay un único trabajo OCR en vuelo, con timeout de 4 s y generación de sesión;
 Validación de esta etapa: 161 pruebas, incluyendo motor, interfaz, registro en procesos separados, OCR real por píxeles, textos diferentes a la placa interna, negativos, consultas exactas, deduplicación, fallo de trabajador y resultado t=50 rechazado tras reinicio. Ruff y formato se verifican aparte. Ejecución nativa programada en backend `windows`, sin offscreen: apertura/cierre, lectura y ficha reales por Tesseract, inicio/pausa, velocidad 2×, movimiento, zoom repetido, reinicio durante monitoreo y segunda identificación desde otro acceso. Revisión de capturas en tamaño 1150×850 y reducido 850×650. Un temporizador del motor y una conexión timeout; el monitor usa su propio temporizador. No equivale a observación humana continua ni a validación con cámaras físicas.
 
 ![Cámara sintética, OCR real y ficha recuperada por placa](docs/identification-native.png)
+
+## Tablero visual SIGMA actual
+
+Composición basada en la referencia de intersección inteligente: cabecera azul oscuro,
+barra fija de ejecución y reloj, tarjeta principal a la izquierda (2/3) y dos tarjetas
+a la derecha (1/3). La primera contiene **Automático** y **Agregar**; la segunda muestra
+la cámara elegida, procedencia, recorte, texto leído, estado y ficha. Los estilos,
+componentes ligeros y tarjeta de cámara están separados en `dashboard_style.py`,
+`dashboard_components.py` y `camera_card.py`.
+
+- **Iniciar / Pausar / Continuar**, **Reiniciar**, velocidad y reloj simulado permanecen
+  arriba. El indicador de la cabecera cambia con el estado real. El reloj es HH:MM:SS.
+- El plano conserva **−**, **Restablecer** y **+**. Abajo aparecen las demandas del
+  controlador por eje, peatones esperando y su motivo. “Próximo turno” solo aparece
+  cuando existe una fase solicitada; en caso contrario se muestra la fase actual.
+- **Automático** conserva interruptor y perfil. **Ajustes avanzados** despliega las
+  tasas por acceso, peatones/min y mezcla de tipos. **Agregar** conserva acceso,
+  tipo, cantidad y cruces peatonales. Las pestañas cambian únicamente el formulario.
+- **Herramientas: detalles, sensores y pruebas** permite acceder a las métricas,
+  cobertura opcional, lecturas de sensores y demostraciones técnicas existentes.
+- En la cámara principal se elige Norte, Sur, Oriente u Occidente. El recuadro turquesa
+  del plano acompaña al vehículo seguido; el recuadro de placa es geométrico. La imagen
+  trasera varía con posición, tipo y color. **Abrir recorte…** procesa una imagen propia;
+  **Cámara sintética** restaura la fuente renderizada. El selector se deshabilita mientras
+  se procesa un recorte importado, que no representa una cámara del mundo.
+- Solo una lectura confirmada recibe estado verde. La ficha y el nombre de color
+  proceden del registro consultado por OCR. Las placas no legibles permanecen sin ficha.
+  **Centro de monitoreo** conserva el laboratorio completo y sus fuentes de video;
+  la tarjeta principal no simula una cámara física que no existe.
+- Bajo 1100 píxeles las tarjetas se apilan y el cuerpo permite desplazamiento vertical.
+  La cabecera y los controles generales permanecen fijos; formularios y herramientas
+  admiten su propio desplazamiento sin barra horizontal ni texto reducido.
+
+La decoración de asfalto, aceras, jardineras y árboles se pinta una vez por escena.
+Vehículos y peatones mantienen objetos gráficos persistentes. El monitoreo embebido
+reutiliza el lector, sus trabajos de una sola entrada, generaciones y consultas existentes;
+es un componente vivo de la pantalla principal, no una ventana cerrada retenida. Se
+cierra con la ventana principal y no procesa mientras esta no se muestra.
+
+Diferencias concretas respecto a la referencia: escena y vehículos vectoriales
+estilizados, cámara trasera simplificada y modelos ficticios del catálogo; no se
+redistribuyen fotografías de Chevrolet ni se inventa una lectura ABC123. No había un
+archivo de logo en el proyecto: el símbolo SIGMA se dibuja localmente con vectores.
+Se conserva la escala física existente de las carrocerías, los cuatro semáforos,
+dos carriles de entrada y dos de salida por acceso y la circulación por la derecha,
+aunque la ilustración de referencia no respete exactamente esas proporciones.
+No se incorporan recursos externos ni nuevas licencias/dependencias gráficas.
+
+Validación visual: capturas nativas revisadas a 1580×980, ventana maximizada y 800×600;
+ejecución, pausa, continuación, zoom repetido, cambio de pestañas, incorporación múltiple
+(con falta de capacidad), OCR real y reinicio comprobados con código de salida 0.
+Una sola conexión del temporizador del motor. Las pruebas del tablero verifican
+proporción 2:1, ausencia de desplazamiento en ventana grande, adaptación vertical,
+controles generales visibles, demandas reales, ausencia de ficha inventada y
+conservación de objetos estáticos. Esto no es una validación de cámaras físicas.
+
+[Captura maximizada](docs/dashboard-maximized.png) ·
+[Ventana reducida](docs/dashboard-small.png) ·
+[Formulario en ventana reducida](docs/dashboard-small-manual.png)

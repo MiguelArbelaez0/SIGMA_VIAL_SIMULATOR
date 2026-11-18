@@ -4,7 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt, QTimer
+from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QComboBox,
@@ -120,9 +120,15 @@ class CameraView(QGraphicsView):
 
 
 class MonitoringCenter(QDialog):
-    def __init__(self, owner):
+    framePublished = Signal(object)
+    readingPublished = Signal(object, object, object)
+    readingFailed = Signal(str)
+    sessionReset = Signal()
+
+    def __init__(self, owner, embedded=False):
         super().__init__(owner)
         self.owner = owner
+        self.embedded = embedded
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.generation = 0
         self.submitted_generation = -1
@@ -285,6 +291,7 @@ class MonitoringCenter(QDialog):
 
     def reset_tracking(self):
         self.generation += 1
+        self.sessionReset.emit()
         if hasattr(self, "identification"):
             from sigma_vial.application.identification import IdentificationSession
 
@@ -464,6 +471,8 @@ class MonitoringCenter(QDialog):
         return self.process_pixels(frame) if frame else None
 
     def refresh(self):
+        if self.embedded and not self.owner.isVisible():
+            return
         mode = self.mode.currentIndex()
         token = id(self.owner.simulation.plates)
         if token != self.session_token:
@@ -623,6 +632,7 @@ class MonitoringCenter(QDialog):
                         f"({evidence.hits}/3) · confianza OCR {reading.confidence:.1f}\n"
                         f"Placa leída por OCR: {evidence.confirmed or 'Sin lectura confirmada'}"
                     )
+                    self.readingPublished.emit(reading, result, snapshot)
                     event = result.event
                     if event and event.record:
                         row = event.record
@@ -657,6 +667,7 @@ class MonitoringCenter(QDialog):
                         OCRReading(self.ocr_snapshot.timestamp),
                     )
                     self.ocr_displayed_track = (self.ocr_snapshot.camera, self.ocr_snapshot.track)
+                    self.readingFailed.emit(str(exc))
                     self.plate_info.setText(f"Sin lectura · OCR no disponible: {exc}")
                     self.plate_record.setText("Sin ficha: no se consulta sin lectura confirmada.")
             self.ocr_future = None
@@ -685,6 +696,7 @@ class MonitoringCenter(QDialog):
             target = target or max(candidates, key=lambda v: v.position, default=None)
             self.ocr_target = target.identifier if target else None
             snapshot = rear_camera(target, timestamp, f"rear-{access.name.lower()}")
+        self.framePublished.emit(snapshot)
         if (snapshot.camera, snapshot.track) != self.ocr_displayed_track:
             self.plate_info.setText(
                 f"Cámara {snapshot.camera} · vehículo seguido {snapshot.track or '—'} · "
