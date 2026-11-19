@@ -524,3 +524,13 @@ conservación de objetos estáticos. Esto no es una validación de cámaras fís
 [Captura maximizada](docs/dashboard-maximized.png) ·
 [Ventana reducida](docs/dashboard-small.png) ·
 [Formulario en ventana reducida](docs/dashboard-small-manual.png)
+
+## Demostración USB con ESP32
+
+1. En PlatformIO de VS Code elige **Open Project** y abre `firmware/esp32/` de este repositorio. Conecta el ESP32 por USB. El entorno es `esp32dev`, con Arduino y 115200 baudios.
+2. Cierra el monitor serial con **Ctrl + C** y desconecta SIGMA VIAL del puerto si estaba conectado. En la terminal de PlatformIO, desde `firmware/esp32/`, ejecuta `pio run -e esp32dev -t upload --upload-port COM3`. Espera **SUCCESS** y deja el monitor cerrado.
+3. Desde la raíz del simulador ejecuta en PowerShell `.\.venv\Scripts\python.exe -m sigma_vial`. En **ESP32**, selecciona **COM3** y pulsa **Conectar**. El puerto también se puede elegir al desplegar la lista. Tras el reinicio, el intercambio PING/PONG habilita la conexión. Con Norte en rojo se envía la primera orden de sincronización.
+4. Desactiva la generación automática, pulsa **Iniciar** y agrega un vehículo en Norte. Cuando llegue a la zona de detección y Norte tenga verde, agrega vehículos en Oriente u Occidente. Sigue la transición de Norte por amarillo hasta rojo. El panel mostrará la orden **NORTE ROJO** y, al llegar la respuesta por USB, **OK NORTE ROJO** con un nuevo número de confirmación.
+5. Si aparece **Sin confirmación**, comprueba el cable y vuelve a conectar. Para un puerto ocupado, cierra el monitor serial de PlatformIO con **Ctrl + C**. La simulación también funciona con la placa desconectada.
+
+El firmware reconoce líneas LF y CRLF. Responde `PONG` a `PING`, `OK NORTE ROJO` a `NORTE ROJO` y `ERROR orden desconocida` a otras órdenes. La confirmación acredita la recepción y el reconocimiento en la placa. Esta demostración solo requiere la placa y el cable USB.
