@@ -525,4 +525,4 @@ conservación de objetos estáticos. Esto no es una validación de cámaras fís
 [Ventana reducida](docs/dashboard-small.png) ·
 [Formulario en ventana reducida](docs/dashboard-small-manual.png)
 
-El [proyecto base de ESP32](firmware/esp32/README.md) se compila por separado con PlatformIO.
+El [proyecto del ESP32 de pantalla](firmware/esp32-pantalla/README.md) se compila por separado con PlatformIO.
