@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
 from sigma_vial.domain.scenario import Access
 from sigma_vial.domain.simulation import Phase, Scenario, Simulation, SimulationConfig, VehicleType
 from sigma_vial.presentation.entity_items import PedestrianGraphicsItem, VehicleGraphicsItem
-from sigma_vial.presentation.esp32 import Esp32Panel
 from sigma_vial.presentation.geometry import IntersectionGeometry
 from sigma_vial.presentation.intersection_scene import IntersectionScene
 from sigma_vial.presentation.intersection_view import IntersectionView
@@ -219,8 +218,6 @@ class MainWindow(QMainWindow):
         backgrounds = {"Rojo": "#fff0f2", "Amarillo": "#fff7df", "Verde": "#e8f8ef"}
         for access, state in self.simulation.signals.items():
             self.intersection_scene.traffic_lights[access].set_state(state)
-            if access is Access.NORTH:
-                self.esp32.observe(state)
             label = self.signal_labels[access]
             label.setText(f"●  {access.value}  ·  {state.value}")
             label.setStyleSheet(
@@ -510,8 +507,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(automatic_card)
         from sigma_vial.presentation.camera_card import CameraCard
 
-        self.esp32 = Esp32Panel(lambda: self.simulation.signals[Access.NORTH])
-        layout.addWidget(self.esp32)
         self.camera_card = CameraCard(self)
         self.camera_card.controller.framePublished.connect(self._highlight_camera_target)
         layout.addWidget(self.camera_card, 1)
@@ -850,7 +845,6 @@ class MainWindow(QMainWindow):
         self.monitoring_center.raise_()
 
     def closeEvent(self, event):
-        self.esp32.disconnect_port()
         self.simulation_timer.stop()
         if self.camera_card.controller is not None:
             self.camera_card.controller.close()

@@ -525,16 +525,4 @@ conservación de objetos estáticos. Esto no es una validación de cámaras fís
 [Ventana reducida](docs/dashboard-small.png) ·
 [Formulario en ventana reducida](docs/dashboard-small-manual.png)
 
-## Demostración USB con ESP32
-
-1. En PlatformIO de VS Code elige **Open Project** y abre `firmware/esp32/` de este repositorio. Conecta el ESP32 por USB. El entorno es `esp32dev`, con Arduino y 115200 baudios.
-2. Cierra el monitor serial con **Ctrl + C** y desconecta SIGMA VIAL del puerto si estaba conectado. En la terminal de PlatformIO, desde `firmware/esp32/`, ejecuta `pio run -e esp32dev -t upload --upload-port COM3`. Espera **SUCCESS** y deja el monitor cerrado.
-3. Desde la raíz del simulador ejecuta en PowerShell `.\.venv\Scripts\python.exe -m sigma_vial`. En **ESP32**, selecciona **COM3** y pulsa **Conectar**. El puerto también se puede elegir al desplegar la lista. Tras el reinicio, el intercambio PING/PONG habilita la conexión. Con Norte en rojo se envía la primera orden de sincronización.
-4. Desactiva la generación automática, pulsa **Iniciar** y agrega un vehículo en Norte. Cuando llegue a la zona de detección y Norte tenga verde, agrega vehículos en Oriente u Occidente. Sigue la transición de Norte por amarillo hasta rojo. El panel mostrará la orden **NORTE ROJO** y, al llegar la respuesta por USB, **OK NORTE ROJO** con un nuevo número de confirmación.
-5. Si aparece **Sin confirmación**, comprueba el cable y vuelve a conectar. Para un puerto ocupado, cierra el monitor serial de PlatformIO con **Ctrl + C**. La simulación también funciona con la placa desconectada.
-
-### LED rojo de Norte
-
-Con la placa desconectada del USB y de cualquier alimentación, conecta GPIO23 (IO23) a una resistencia de 330 Ω. Conecta el otro extremo al ánodo del LED rojo (pata larga) y el cátodo (pata corta, lado plano) a GND. Usa un LED indicador individual y deja la resistencia en serie.
-
-Al arrancar, el LED está apagado. Tras PONG, la aplicación sincroniza el estado actual. Rojo enciende GPIO23 con `NORTE ROJO`; verde o amarillo lo apagan con `NORTE APAGADO`. La placa confirma cada escritura con `OK` y la orden recibida. En la demostración anterior se debe observar encendido al conectar en rojo, apagado durante verde y amarillo, y encendido al volver a rojo. Si cierras la conexión con la placa alimentada, el pin puede conservar la última salida hasta el reinicio o la siguiente sincronización.
+El [proyecto base de ESP32](firmware/esp32/README.md) se compila por separado con PlatformIO.
