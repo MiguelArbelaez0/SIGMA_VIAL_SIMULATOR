@@ -30,7 +30,7 @@ class Esp32Panel(QGroupBox):
         self.port_factory = port_factory
         self.port = None
         self.ready = False
-        self.last_state = None
+        self.last_command = None
         self.confirmations = 0
         self.ports = PortSelector()
         self.ports.refresh()
@@ -88,7 +88,7 @@ class Esp32Panel(QGroupBox):
         self.timer.stop()
         port, self.port = self.port, None
         self.ready = False
-        self.last_state = None
+        self.last_command = None
         if port is not None:
             port.close()
             port.deleteLater()
@@ -130,23 +130,21 @@ class Esp32Panel(QGroupBox):
                 self.status.setText("Conectado")
                 self.reply.setText(response)
                 self.observe(self.north_state())
-            elif response == "OK NORTE ROJO" and self.ready and self.pending:
+            elif self.ready and self.pending and response == f"OK {self.last_command}":
                 self.timer.stop()
                 self.pending = False
                 self.confirmations += 1
                 self.reply.setText(f"{response} · #{self.confirmations}")
-            elif response and response != "OK NORTE ROJO":
+                self.observe(self.north_state())
+            elif response and not response.startswith("OK "):
                 self.reply.setText(response[:80])
         if len(self.buffer) > 1024:
             self.disconnect_port("Respuesta USB demasiado larga")
 
     def observe(self, state):
-        if not self.ready or state is self.last_state:
+        command = "NORTE ROJO" if state is SignalState.RED else "NORTE APAGADO"
+        if not self.ready or self.pending or command == self.last_command:
             return
-        self.last_state = state
-        if state is SignalState.RED:
-            if self.pending:
-                self.disconnect_port("Sin confirmación · vuelve a conectar")
-                return
-            self.pending = True
-            self.send("NORTE ROJO")
+        self.last_command = command
+        self.pending = True
+        self.send(command)

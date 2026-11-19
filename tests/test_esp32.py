@@ -62,6 +62,9 @@ def test_red_from_controller_and_usb_confirmation(qtbot):
         if sim.signals[Access.NORTH] is SignalState.GREEN:
             break
     assert sim.signals[Access.NORTH] is SignalState.GREEN
+    assert port.commands[-1] == b"NORTE APAGADO\n"
+    port.feed(b"OK NORTE APAGADO\n")
+    assert panel.reply.text() == "OK NORTE APAGADO · #2"
     sim.add_vehicle(Access.EAST)
     for _ in range(1200):
         sim.advance(0.05)
@@ -71,9 +74,9 @@ def test_red_from_controller_and_usb_confirmation(qtbot):
     assert sim.signals[Access.NORTH] is SignalState.RED
     for _ in range(10):
         window._sync_signals()
-    assert port.commands == [b"PING\n", b"NORTE ROJO\n", b"NORTE ROJO\n"]
+    assert port.commands == [b"PING\n", b"NORTE ROJO\n", b"NORTE APAGADO\n", b"NORTE ROJO\n"]
     port.feed(b"OK NORTE ROJO\n")
-    assert panel.reply.text() == "OK NORTE ROJO · #2"
+    assert panel.reply.text() == "OK NORTE ROJO · #3"
 
 
 def test_usb_timeout_reconnect_and_unplug(qtbot):

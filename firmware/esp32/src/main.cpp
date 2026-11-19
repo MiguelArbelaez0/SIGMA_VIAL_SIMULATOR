@@ -1,7 +1,11 @@
 #include <Arduino.h>
 #include <cstring>
 
+constexpr uint8_t NORTH_LED_PIN = 23;
+
 void setup() {
+    pinMode(NORTH_LED_PIN, OUTPUT);
+    digitalWrite(NORTH_LED_PIN, LOW);
     Serial.begin(115200);
 }
 
@@ -17,7 +21,11 @@ void loop() {
             if (!invalid && strcmp(line, "PING") == 0) {
                 Serial.println("PONG");
             } else if (!invalid && strcmp(line, "NORTE ROJO") == 0) {
+                digitalWrite(NORTH_LED_PIN, HIGH);
                 Serial.println("OK NORTE ROJO");
+            } else if (!invalid && strcmp(line, "NORTE APAGADO") == 0) {
+                digitalWrite(NORTH_LED_PIN, LOW);
+                Serial.println("OK NORTE APAGADO");
             } else {
                 Serial.println("ERROR orden desconocida");
             }
