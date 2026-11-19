@@ -378,8 +378,12 @@ class MonitoringCenter(QDialog):
     def render_access(self, access):
         # Capture pixels on the GUI thread. No detector receives scene/world references.
 
-        x1, y1 = from_north(access, -116, -430)
-        x2, y2 = from_north(access, 0, -130)
+        sim = self.owner.simulation
+        camera = sim.observation_source.cameras[access]
+        extent = sim.config.approach_extent
+        half_width = self.owner.intersection_scene.geometry.road_half_width
+        x1, y1 = from_north(access, -half_width, camera.start - extent)
+        x2, y2 = from_north(access, 0, camera.end + 30 - extent)
         source = QRectF(min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
         picture = QImage(
             int(source.width() * 2), int(source.height() * 2), QImage.Format.Format_RGB888
@@ -405,6 +409,7 @@ class MonitoringCenter(QDialog):
             picture = self.render_access(access)
             tracks = self.simulated_tracks[access]
             camera = sim.observation_source.cameras[access]
+            geometry = self.owner.intersection_scene.geometry
             for d in summary.detections:
                 # Bounding geometry is known scenario data ONLY in simulated mode.
                 v = next(
@@ -412,8 +417,8 @@ class MonitoringCenter(QDialog):
                 )
                 if not v:
                     continue
-                x = (116 - 29 - 58 * d.lane) * 2
-                y = d.position * 2
+                x = (geometry.road_half_width - geometry.lane_width * (0.5 + d.lane)) * 2
+                y = (d.position - camera.start) * 2
                 detection = ImageDetection(
                     (x - v.width, y - v.length, x + v.width, y + v.length),
                     VehicleType[d.vehicle_type].value[0],
@@ -450,7 +455,11 @@ class MonitoringCenter(QDialog):
             )
             self.captions[access].setText(text)
             self.views[access].show_frame(
-                picture, list(tracks.values()), 250 / 300, text, coverage_fraction=270 / 300
+                picture,
+                list(tracks.values()),
+                (camera.count_line - camera.start) * 2 / picture.height(),
+                text,
+                coverage_fraction=(camera.end - camera.start) * 2 / picture.height(),
             )
         self.status.setText(
             "Percepción simulada · imágenes del plano; recuadros "
@@ -687,15 +696,18 @@ class MonitoringCenter(QDialog):
                 "Recorte de imagen importado por el usuario; sin metadatos del simulador",
             )
         else:
+            camera = self.owner.simulation.observation_source.cameras[access]
             candidates = [
                 v
                 for v in self.owner.simulation.vehicles
-                if v.access is access and 0 <= v.position <= 270
+                if v.access is access and camera.start <= v.position <= camera.end
             ]
             target = next((v for v in candidates if v.identifier == self.ocr_target), None)
             target = target or max(candidates, key=lambda v: v.position, default=None)
             self.ocr_target = target.identifier if target else None
-            snapshot = rear_camera(target, timestamp, f"rear-{access.name.lower()}")
+            snapshot = rear_camera(
+                target, timestamp, f"rear-{access.name.lower()}", coverage_start=camera.start
+            )
         self.framePublished.emit(snapshot)
         if (snapshot.camera, snapshot.track) != self.ocr_displayed_track:
             self.plate_info.setText(

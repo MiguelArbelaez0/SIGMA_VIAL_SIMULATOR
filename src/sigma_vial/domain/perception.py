@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Protocol
+from typing import Protocol, Self
 
 from sigma_vial.domain.scenario import Access
 
@@ -158,6 +158,17 @@ class SimulatedObservationSource:
     cameras: dict[Access, VirtualCamera] = field(
         default_factory=lambda: {a: VirtualCamera(a) for a in Access}
     )
+
+    @classmethod
+    def for_stop_line(cls, stop_position: float) -> Self:
+        """Ubica la cobertura histórica respecto de la línea de parada."""
+        source = cls()
+        offset = stop_position - 244
+        for camera in source.cameras.values():
+            camera.start += offset
+            camera.end += offset
+            camera.count_line += offset
+        return source
 
     def read(self, time, vehicles, pedestrians):
         return ObservationBatch(

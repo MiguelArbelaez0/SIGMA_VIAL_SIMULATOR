@@ -86,6 +86,7 @@ def test_sensor_classification_without_readable_plate(kind):
 def test_sensor_disconnect_recovery_and_clock_pause(failure):
     sim = Simulation()
     sim.add_vehicle(Access.NORTH)
+    sim.vehicles[0].position = sim.observation_source.cameras[Access.NORTH].start
     sim.running = True
     sim.advance(2)
     camera = sim.observation_source.cameras[Access.EAST]

@@ -36,6 +36,9 @@ def test_summary_uses_real_demand_and_only_committed_next_phase(qtbot):
     w._add_vehicle(Access.EAST)
     w.simulation.running = True
     w.simulation.advance(0.15)
+    w._refresh_simulation()
+    assert "0 vehículos" in w.ew_summary.text()
+    w.simulation.advance(4)
     w._add_pedestrian(Access.NORTH)
     w._refresh_simulation()
     assert "1 vehículos" in w.ew_summary.text()
@@ -46,7 +49,7 @@ def test_summary_uses_real_demand_and_only_committed_next_phase(qtbot):
     w._refresh_simulation()
     assert "Próximo turno" in w.overview.text()
     assert Phase.EW_GREEN.value in w.overview.text()
-    assert "00:00:00" in w.clock_label.text()
+    assert "00:00:04" in w.clock_label.text()
 
 
 def test_camera_selection_does_not_change_world_and_does_not_invent_readings(qtbot):

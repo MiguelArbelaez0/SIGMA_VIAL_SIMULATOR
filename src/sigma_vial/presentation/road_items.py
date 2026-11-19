@@ -74,11 +74,11 @@ def add_approach_markings(
         group.addToGroup(scene.addLine(x1, y1, x2, y2, pen))
 
     for x in (-3, 3):
-        line(x, -extent + 43, x, -geometry.crossing_far - 4, QPen(QColor("#f0ca66"), 2))
+        line(x, -extent, x, -geometry.crossing_far - 4, QPen(QColor("#f0ca66"), 2))
     dashed = QPen(QColor("#bac8d8"), 2, Qt.PenStyle.DashLine)
     dashed.setDashPattern([8, 7])
     for x in (-geometry.lane_width, geometry.lane_width):
-        line(x, -extent + 43, x, -geometry.stop_distance - 12, dashed)
+        line(x, -extent, x, -geometry.stop_distance - 12, dashed)
 
     # Arribando desde el norte se encuentra primero la detención, después el paso.
     line(-h + 5, -geometry.stop_distance, -6, -geometry.stop_distance, QPen(white, 6))

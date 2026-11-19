@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from sigma_vial.domain.scenario import Access
+from sigma_vial.domain.scenario import ARM_EXTENT, Access
 
 
 def rotation(access: Access) -> int:
@@ -33,7 +33,7 @@ def from_north(access: Access, x: float, y: float) -> tuple[float, float]:
 @dataclass(frozen=True)
 class IntersectionGeometry:
     lane_width: float = 58
-    arm_extent: float = 430
+    arm_extent: float = ARM_EXTENT
     sidewalk_width: float = 32
     crossing_gap: float = 18
     crossing_depth: float = 36
@@ -69,10 +69,4 @@ class IntersectionGeometry:
         return from_north(access, -distance, -distance)
 
     def label_position(self, access: Access) -> tuple[float, float]:
-        # En los brazos horizontales el rótulo queda junto a la acera para que su
-        # ancho no invada la calzada ni obligue a reducir todo el plano.
-        if access is Access.EAST:
-            return self.arm_extent - 65, -self.road_half_width - self.sidewalk_width - 26
-        if access is Access.WEST:
-            return -self.arm_extent + 65, self.road_half_width + self.sidewalk_width + 26
-        return from_north(access, 0, -self.arm_extent - self.scene_margin / 2)
+        return from_north(access, -self.road_half_width - self.sidewalk_width - 85, -360)

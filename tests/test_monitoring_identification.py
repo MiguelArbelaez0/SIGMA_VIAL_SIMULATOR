@@ -53,11 +53,14 @@ def test_visible_real_ocr_registry_unknown_and_failure_does_not_stop_traffic(qtb
     window.simulation.automatic_generation = False
     window.simulation.add_vehicle(Access.NORTH)
     vehicle = window.simulation.vehicles[0]
+    vehicle.position = window.simulation.observation_source.cameras[Access.NORTH].start
+    window.simulation.add_vehicle(Access.NORTH)
     plate = vehicle.plate
     monitor = MonitoringCenter(window)
     monitor.show()
     monitor.mode.setCurrentIndex(3)
     qtbot.waitUntil(lambda: monitor.plate_events.count() == 1, timeout=10000)
+    assert monitor.ocr_target == vehicle.identifier
     assert plate in monitor.plate_info.text()
     assert "Ficha recuperada del registro" in monitor.plate_record.text()
     qtbot.wait(500)
@@ -85,6 +88,9 @@ def test_ocr_worker_failure_does_not_affect_traffic_control(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     window.simulation.add_vehicle(Access.NORTH)
+    window.simulation.vehicles[0].position = window.simulation.observation_source.cameras[
+        Access.NORTH
+    ].start
     monitor = MonitoringCenter(window)
     monitor.timer.stop()
     monitor.mode.setCurrentIndex(3)

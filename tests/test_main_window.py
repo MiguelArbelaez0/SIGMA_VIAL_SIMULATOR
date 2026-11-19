@@ -1,6 +1,7 @@
 """Contrato visual básico y cierre con el ciclo de eventos real de Qt."""
 
 import pytest
+from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtWidgets import QLabel, QPushButton
 from pytestqt.qtbot import QtBot
 
@@ -39,13 +40,21 @@ def test_window_can_be_shown_resized_and_closed(qtbot: QtBot) -> None:
     window.resize(800, 600)
     qtbot.waitUntil(lambda: window.width() == 800 and window.height() == 600)
     view = window.intersection_view
-    visible = view.mapToScene(view.viewport().rect()).boundingRect()
-    assert visible.contains(window.intersection_scene.sceneRect())
+    qtbot.waitUntil(
+        lambda: (
+            view.mapToScene(view.viewport().rect())
+            .boundingRect()
+            .contains(QRectF(-350, -350, 700, 700))
+        )
+    )
+    dashboard = window.body_scroll.viewport()
+    card_bottom = window.scene_card.mapTo(dashboard, window.scene_card.rect().bottomRight())
+    assert dashboard.rect().contains(card_bottom)
     assert window.close()
     qtbot.waitUntil(lambda: not window.isVisible())
 
 
-def test_view_controls_zoom_and_restore_full_scene(qtbot: QtBot) -> None:
+def test_view_controls_explore_and_restore_centered_framing(qtbot: QtBot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(800, 600)
@@ -53,6 +62,13 @@ def test_view_controls_zoom_and_restore_full_scene(qtbot: QtBot) -> None:
     view = window.intersection_view
     view.reset_view()
     initial_scale = view.transform().m11()
+    initial_area = view.mapToScene(view.viewport().rect()).boundingRect()
+    buttons["−"].click()
+    buttons["−"].click()
+    extent = window.intersection_scene.geometry.arm_extent
+    zoomed_out_area = view.mapToScene(view.viewport().rect()).boundingRect()
+    assert zoomed_out_area.contains(QRectF(-extent, -extent, 2 * extent, 2 * extent))
+    view.reset_view()
     buttons["+"].click()
     zoomed_scale = view.transform().m11()
     assert zoomed_scale > initial_scale
@@ -61,14 +77,12 @@ def test_view_controls_zoom_and_restore_full_scene(qtbot: QtBot) -> None:
     for _ in range(12):
         view.zoom_in()
     assert view.zoom_steps == 6
+    view.centerOn(QPointF(0, -extent))
+    assert view.mapToScene(view.viewport().rect().center()).y() < -extent / 2
     buttons["Restablecer"].click()
     assert view.zoom_steps == 0
     assert view.transform().m11() == pytest.approx(initial_scale)
-    assert (
-        view.mapToScene(view.viewport().rect())
-        .boundingRect()
-        .contains(window.intersection_scene.sceneRect())
-    )
+    assert view.mapToScene(view.viewport().rect()).boundingRect() == initial_area
 
 
 def test_simulation_controls_use_one_timer_and_sync_scene(qtbot: QtBot) -> None:

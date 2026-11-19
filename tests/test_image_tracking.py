@@ -105,12 +105,19 @@ def test_monitor_simulation_is_labelled_and_worker_queue_is_bounded(qtbot):
     window.simulation.automatic_generation = False
     window._add_vehicle(Access.NORTH)
     window.simulation.running = True
-    window.simulation.advance(0.2)
+    window.simulation.advance(4)
+    window._sync_entities()
     monitor = MonitoringCenter(window)
     monitor.timer.stop()
     monitor.refresh()
     assert "Percepción simulada" in monitor.status.text()
     assert len(monitor.simulated_tracks[Access.NORTH]) == 1
+    camera = window.simulation.observation_source.cameras[Access.NORTH]
+    vehicle = window.simulation.vehicles[0]
+    track = monitor.simulated_tracks[Access.NORTH][camera.track_for(vehicle.identifier)]
+    detection = camera.last_result.detections[0]
+    assert detection.plate == vehicle.plate
+    assert track.detection.center == (174, (detection.position - camera.start) * 2)
     assert "edad" in monitor.captions[Access.NORTH].text()
     assert all(
         track.detection.confidence is None

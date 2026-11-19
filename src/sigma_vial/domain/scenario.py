@@ -3,6 +3,9 @@
 from dataclasses import dataclass
 from enum import Enum
 
+STOP_LINE_DISTANCE = 186
+ARM_EXTENT = STOP_LINE_DISTANCE + 488
+
 
 class Access(Enum):
     NORTH = "Norte"

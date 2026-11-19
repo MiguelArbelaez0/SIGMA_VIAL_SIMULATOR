@@ -9,7 +9,7 @@ from sigma_vial.domain.catalog import CATALOG, VehicleType
 from sigma_vial.domain.perception import ObservationSource, SensorStatus, SimulatedObservationSource
 from sigma_vial.domain.plates import PlateService
 from sigma_vial.domain.registration import COLORS, RegisteredVehicle, VehicleRegistry
-from sigma_vial.domain.scenario import Access, SignalState
+from sigma_vial.domain.scenario import ARM_EXTENT, STOP_LINE_DISTANCE, Access, SignalState
 
 
 class Phase(Enum):
@@ -52,12 +52,12 @@ class SimulationConfig:
     vehicle_braking: float = 110
     vehicle_rate: float = 0.20
     pedestrian_rate: float = 0.05
-    approach_extent: float = 430
-    stop_line_distance: float = 186
+    approach_extent: float = ARM_EXTENT
+    stop_line_distance: float = STOP_LINE_DISTANCE
     stop_margin: float = 4
     spawn_gap: float = 36
-    lane_length: float = 860
-    intersection_half: float = 186
+    lane_length: float = 2 * ARM_EXTENT
+    intersection_half: float = STOP_LINE_DISTANCE
     pedestrian_crossing_length: float = 232
     body_gap: float = 8
     vehicle_length: float = 28
@@ -139,7 +139,7 @@ class Simulation:
     _rng: random.Random = field(init=False, repr=False)
     vehicle_mix: tuple[float, ...] = (12, 30, 25, 15, 8, 4, 4, 2)
     selected_vehicle_type: VehicleType | None = VehicleType.COMPACT
-    observation_source: ObservationSource = field(default_factory=SimulatedObservationSource)
+    observation_source: ObservationSource | None = None
     sensor_timeout: float = 1.0
     registry: VehicleRegistry | None = None
     _requested_types: dict[Access, deque] = field(
@@ -156,6 +156,10 @@ class Simulation:
     _pedestrian_due: float = 0
 
     def __post_init__(self) -> None:
+        if self.observation_source is None:
+            self.observation_source = SimulatedObservationSource.for_stop_line(
+                self.config.approach_extent - self.config.stop_line_distance
+            )
         self.plates = PlateService(self.seed)
         self._rng = random.Random(self.seed)
         self._arrival_due = dict.fromkeys(Access, 0.0)

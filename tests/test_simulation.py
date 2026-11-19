@@ -1,5 +1,7 @@
 """Pruebas deterministas del motor independiente de Qt."""
 
+from itertools import pairwise
+
 import pytest
 
 from sigma_vial.domain.scenario import Access, SignalState
@@ -10,6 +12,74 @@ def quiet_rates(sim: Simulation) -> Simulation:
     sim.vehicle_rates = dict.fromkeys(Access, 0.0)
     sim.pedestrian_rate = 0
     return sim
+
+
+def start_in_camera_range(sim: Simulation) -> None:
+    """Prepara vehículos observables para las pruebas de cambio de fase."""
+    for vehicle in sim.vehicles:
+        vehicle.position += sim.observation_source.cameras[vehicle.access].start
+
+
+def test_high_demand_vehicles_queue_cross_and_leave_on_all_four_arms() -> None:
+    sim = Simulation()
+    for access in Access:
+        sim.set_demand(access, 60)
+        sim.add_vehicle(access)
+    sim.add_pedestrian(Access.NORTH)
+    assert sim.config.approach_extent - sim.config.stop_line_distance == 488
+    assert all(vehicle.position == 0 for vehicle in sim.vehicles)
+    assert all(summary.demand == 0 for summary in sim.observations().traffic.values())
+
+    queued = set()
+    entered_on_green = set()
+    completed_accesses = set()
+    pedestrian = sim.pedestrians[0]
+    sim.running = True
+    for _ in range(1600):
+        signals = sim.signals
+        previous = [(vehicle, vehicle.inside) for vehicle in sim.vehicles]
+        sim.advance(0.05)
+        current_ids = {vehicle.identifier for vehicle in sim.vehicles}
+        batch = sim.observations()
+        for access, summary in batch.traffic.items():
+            camera = sim.observation_source.cameras[access]
+            for detection in summary.detections:
+                if detection.state != "detenido":
+                    continue
+                lane = sim.lane_vehicles(access, detection.lane)
+                for vehicle, leader in pairwise(lane):
+                    if (
+                        vehicle.speed <= 0.5
+                        and not vehicle.inside
+                        and not vehicle.exiting
+                        and not leader.inside
+                        and not leader.exiting
+                        and camera.track_for(vehicle.identifier) == detection.track_id
+                    ):
+                        assert detection.plate == vehicle.plate
+                        assert vehicle.position + vehicle.length / 2 < 488
+                        queued.add(vehicle.identifier)
+        for vehicle, was_inside in previous:
+            if (
+                vehicle.identifier in queued
+                and vehicle.inside
+                and not was_inside
+                and signals[vehicle.access] is SignalState.GREEN
+            ):
+                entered_on_green.add(vehicle.identifier)
+            if vehicle.identifier not in current_ids:
+                rear = vehicle.position - vehicle.length / 2
+                assert rear >= sim.config.lane_length
+                if vehicle.identifier in entered_on_green:
+                    completed_accesses.add(vehicle.access)
+        if pedestrian in sim.pedestrians and pedestrian.walking:
+            assert set(sim.signals.values()) == {SignalState.RED}
+            assert not any(vehicle.inside for vehicle in sim.vehicles)
+        if completed_accesses == set(Access) and pedestrian not in sim.pedestrians:
+            break
+
+    assert completed_accesses == set(Access)
+    assert pedestrian not in sim.pedestrians
 
 
 def test_pause_freezes_time_and_reset_restores_all_red() -> None:
@@ -103,6 +173,7 @@ def test_yellow_clearance_waits_for_vehicles_already_inside() -> None:
     sim.vehicle_rates = dict.fromkeys(Access, 0.0)
     sim.pedestrian_rate = 0
     sim.add_vehicle(Access.NORTH)
+    start_in_camera_range(sim)
     sim.phase = Phase.NS_GREEN
     sim.running = True
     sim.advance(5)
@@ -225,8 +296,9 @@ def test_large_opposing_demand_requests_change_after_minimum_green() -> None:
     )
     sim = quiet_rates(Simulation(config=config))
     sim.add_vehicle(Access.NORTH)
-    for _ in range(6):
-        sim.add_vehicle(Access.EAST)
+    for index in range(6):
+        sim.vehicles.append(Vehicle(index + 2, Access.EAST, index % 2, position=index // 2 * 40))
+    start_in_camera_range(sim)
     sim.phase = Phase.NS_GREEN
     sim.running = True
 
@@ -328,6 +400,7 @@ def test_wait_maximum_precedes_a_much_larger_active_queue() -> None:
     for _ in range(8):
         sim.add_vehicle(Access.NORTH)
     sim.add_vehicle(Access.EAST)
+    start_in_camera_range(sim)
     sim.vehicles[-1].wait = 5
     sim.phase = Phase.NS_GREEN
     sim._last_axis = "ns"
@@ -358,6 +431,7 @@ def test_exiting_active_vehicle_does_not_hold_green_against_opposing_queue() -> 
     sim = quiet_rates(Simulation(config=config))
     sim.vehicles.append(Vehicle(1, Access.NORTH, 0, exiting=True, position=700))
     sim.add_vehicle(Access.EAST)
+    start_in_camera_range(sim)
     sim.phase = Phase.NS_GREEN
     sim.phase_time = config.min_green
     sim._last_axis = "ns"
@@ -398,6 +472,7 @@ def test_arrivals_do_not_reset_elapsed_green_maximum() -> None:
     for _ in range(8):
         sim.add_vehicle(Access.NORTH)
     sim.add_vehicle(Access.EAST)
+    start_in_camera_range(sim)
     sim.vehicle_rates[Access.NORTH] = 60
     sim.phase = Phase.NS_GREEN
     sim._last_axis = "ns"
@@ -421,6 +496,7 @@ def test_yellow_then_clearance_holds_opposing_phase_until_conflict_empty() -> No
     sim = quiet_rates(Simulation(config=config))
     sim.vehicles.append(Vehicle(1, Access.NORTH, 0, position=220, speed=60))
     sim.add_vehicle(Access.EAST)
+    start_in_camera_range(sim)
     sim.phase = Phase.NS_GREEN
     sim._last_axis = "ns"
     sim.running = True
@@ -456,6 +532,7 @@ def test_committed_vehicle_can_enter_during_red_clearance_before_next_phase() ->
     committed = Vehicle(1, Access.NORTH, 0, position=200, speed=100)
     sim.vehicles.append(committed)
     sim.add_vehicle(Access.EAST)
+    start_in_camera_range(sim)
     sim.phase = Phase.NS_YELLOW
     sim._last_axis = "ns"
     sim._pending_phase = Phase.EW_GREEN

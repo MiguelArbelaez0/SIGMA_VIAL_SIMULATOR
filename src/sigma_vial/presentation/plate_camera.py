@@ -21,7 +21,9 @@ class PlateCameraFrame:
         return self.image.copy(self.plate_rect.toRect()) if self.plate_rect else QImage()
 
 
-def rear_camera(vehicle, timestamp: float, camera="virtual-rear") -> PlateCameraFrame:
+def rear_camera(
+    vehicle, timestamp: float, camera="virtual-rear", *, coverage_start: float = 0
+) -> PlateCameraFrame:
     image = QImage(640, 360, QImage.Format.Format_RGB888)
     image.fill(QColor("#20334d"))
     painter = QPainter(image)
@@ -40,7 +42,7 @@ def rear_camera(vehicle, timestamp: float, camera="virtual-rear") -> PlateCamera
     track = None
     if vehicle is not None:
         # Pose and scale follow travel along the approach, independent of map zoom.
-        scale = 0.75 + 0.25 * min(1, max(0, vehicle.position / 270))
+        scale = 0.75 + 0.25 * min(1, max(0, (vehicle.position - coverage_start) / 270))
         kind = vehicle.kind
         body_width, body_height = {
             VehicleType.MOTORCYCLE: (300, 210),

@@ -1,6 +1,6 @@
 """Ventana SIGMA con controles generales y formularios de llegada independientes."""
 
-from PySide6.QtCore import QRectF, Qt, QTimer
+from PySide6.QtCore import QEvent, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QBoxLayout,
@@ -119,6 +119,7 @@ class MainWindow(QMainWindow):
         body.addWidget(self.side_panel, 1)
         self.body_scroll = self._scroll_content(self.body_content)
         self.body_scroll.setObjectName("bodyScroll")
+        self.body_scroll.viewport().installEventFilter(self)
         outer.addWidget(self.body_scroll, 1)
         self.setCentralWidget(root)
         self._refresh_simulation()
@@ -131,11 +132,27 @@ class MainWindow(QMainWindow):
         self.body.setDirection(
             QBoxLayout.Direction.TopToBottom if compact else QBoxLayout.Direction.LeftToRight
         )
-        self.body_content.setMinimumHeight(1320 if compact else 0)
-        self.scene_card.setMinimumHeight(500 if compact else 0)
         self.side_panel.setMinimumHeight(760 if compact else 0)
         self.subtitle.setVisible(not compact)
         self.tabs.setMaximumHeight(320 if self.tabs.currentIndex() else 205)
+        self._resize_scene_card()
+
+    def eventFilter(self, watched, event):
+        if (
+            event.type() == QEvent.Type.Resize
+            and hasattr(self, "body_scroll")
+            and watched is self.body_scroll.viewport()
+        ):
+            self._resize_scene_card()
+        return super().eventFilter(watched, event)
+
+    def _resize_scene_card(self) -> None:
+        if self.body.direction() == QBoxLayout.Direction.TopToBottom:
+            available = self.body_scroll.viewport().height() - self.body.contentsMargins().top()
+            self.scene_card.setFixedHeight(max(360, available))
+        else:
+            self.scene_card.setMinimumHeight(0)
+            self.scene_card.setMaximumHeight(16777215)
 
     def _highlight_camera_target(self, snapshot):
         from PySide6.QtGui import QPen
@@ -286,8 +303,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_simulation(self) -> None:
         sim = self.simulation
+        batch = sim.observations()
         if hasattr(self, "sensor_status"):
-            batch = sim.observations()
             lines = []
             for access, summary in batch.traffic.items():
                 counts = {}
@@ -309,18 +326,22 @@ class MainWindow(QMainWindow):
             self.sensor_status.setText(
                 "Detección simulada · umbral detenido ≤ 0,5 u/s\n" + "\n".join(lines)
             )
-        ns_pending = sim.waiting(Access.NORTH) + sim.waiting(Access.SOUTH)
-        ew_pending = sim.waiting(Access.EAST) + sim.waiting(Access.WEST)
+        ns = (Access.NORTH, Access.SOUTH)
+        ew = (Access.EAST, Access.WEST)
+        ns_demand = sum(batch.traffic[access].demand for access in ns)
+        ew_demand = sum(batch.traffic[access].demand for access in ew)
+        ns_stopped = sum(batch.traffic[access].queue for access in ns)
+        ew_stopped = sum(batch.traffic[access].queue for access in ew)
         crossing = sum(p.walking for p in sim.pedestrians)
         pedestrian_waits = [p.wait for p in sim.pedestrians if not p.walking]
-        self.ns_summary.setText(f"N–S: {sim.axis_demand('ns')} vehículos")
-        self.ew_summary.setText(f"O–O: {sim.axis_demand('ew')} vehículos")
+        self.ns_summary.setText(f"N–S: {ns_demand} vehículos")
+        self.ew_summary.setText(f"O–O: {ew_demand} vehículos")
         self.ped_summary.setText(f"{sim.pedestrian_waiting()} peatones esperando")
         pending = sim._pending_phase
         title = f"Próximo turno: {pending.value}" if pending else sim.phase.value
         self.overview.setText(f"{title}\n{sim.decision}")
         self.overview.setToolTip(
-            f"En cola N–S: {ns_pending} / O–O: {ew_pending} · {crossing} peatones cruzando"
+            f"En cola N–S: {ns_stopped} / O–O: {ew_stopped} · {crossing} peatones cruzando"
         )
         seconds = int(sim.time)
         self.clock_label.setText(
@@ -330,17 +351,11 @@ class MainWindow(QMainWindow):
             f"color: {'#12c990' if sim.running else '#f1bd54' if self.has_started else '#94a8bf'};"
             "font-size: 25px;"
         )
-        ns = (Access.NORTH, Access.SOUTH)
-        ew = (Access.EAST, Access.WEST)
-        ns_stopped = sim.stopped_vehicles(ns)
-        ns_approaching = sim.approaching_vehicles(ns)
-        ew_stopped = sim.stopped_vehicles(ew)
-        ew_approaching = sim.approaching_vehicles(ew)
         self.metrics.setText(
-            f"Demanda pendiente · Norte–Sur: {sim.axis_demand('ns')} "
-            f"(detenidos {ns_stopped}, aproximándose {ns_approaching}) · "
-            f"Oriente–Occidente: {sim.axis_demand('ew')} "
-            f"(detenidos {ew_stopped}, aproximándose {ew_approaching})\n"
+            f"Demanda pendiente · Norte–Sur: {ns_demand} "
+            f"(detenidos {ns_stopped}, aproximándose {ns_demand - ns_stopped}) · "
+            f"Oriente–Occidente: {ew_demand} "
+            f"(detenidos {ew_stopped}, aproximándose {ew_demand - ew_stopped})\n"
             f"Saliendo · Norte–Sur: {sim.exiting_vehicles(ns)} · "
             f"Oriente–Occidente: {sim.exiting_vehicles(ew)}\n"
             f"Mayor espera por eje · Norte–Sur: {sim.axis_wait('ns'):.1f} s · "
@@ -767,13 +782,24 @@ class MainWindow(QMainWindow):
 
         from sigma_vial.presentation.geometry import rotation
 
+        extent = self.simulation.config.approach_extent
+        half_width = self.intersection_scene.geometry.road_half_width
         for access in Access:
+            camera = self.simulation.observation_source.cameras[access]
             zone = self.intersection_scene.addRect(
-                -116, -430, 116, 270, QPen(QColor("#279db1"), 2), QBrush(QColor(30, 170, 190, 35))
+                -half_width,
+                camera.start - extent,
+                half_width,
+                camera.end - camera.start,
+                QPen(QColor("#279db1"), 2),
+                QBrush(QColor(30, 170, 190, 35)),
             )
             zone.setRotation(rotation(access))
             zone.setZValue(2)
-            line = self.intersection_scene.addLine(-116, -180, 0, -180, QPen(QColor("#dd75bd"), 3))
+            count_y = camera.count_line - extent
+            line = self.intersection_scene.addLine(
+                -half_width, count_y, 0, count_y, QPen(QColor("#dd75bd"), 3)
+            )
             line.setRotation(rotation(access))
             line.setZValue(3)
             for item in (zone, line):
