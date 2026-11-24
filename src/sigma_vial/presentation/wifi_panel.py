@@ -1,8 +1,10 @@
 """Cliente TCP del ESP32. La sesión se confirma al recibir PONG."""
 
 import re
+import sys
 
-from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtCore import QSettings, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtNetwork import QAbstractSocket, QHostAddress, QTcpSocket
 from PySide6.QtWidgets import QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton
 
@@ -48,6 +50,11 @@ class WifiPanel(QGroupBox):
             label.hide()
         self.status = QLabel("Sin conexión")
         self.status.setWordWrap(True)
+        self.wifi_settings = QPushButton("Abrir Wi-Fi de Windows")
+        self.wifi_settings.hide()
+        self.wifi_settings.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("ms-settings:network-wifi"))
+        )
         layout = QGridLayout(self)
         self.result = QLabel()
         self.result.setWordWrap(True)
@@ -59,6 +66,7 @@ class WifiPanel(QGroupBox):
         layout.addWidget(self.result, 2, 0, 1, 2)
         layout.addWidget(self.sent, 3, 0, 1, 2)
         layout.addWidget(self.reply, 4, 0, 1, 2)
+        layout.addWidget(self.wifi_settings, 5, 0, 1, 2)
         self.button.clicked.connect(self.toggle)
         self.address.returnPressed.connect(self.toggle)
         self.socket = None
@@ -164,6 +172,7 @@ class WifiPanel(QGroupBox):
             elif not self.ready and response == "PONG":
                 timer.stop()
                 self.ready = True
+                self.wifi_settings.hide()
                 self.settings.setValue("ip", ip.toString())
                 self.button.setText("ESP32 conectado")
                 self.button.setToolTip("Desconectar del ESP32")
@@ -220,10 +229,12 @@ class WifiPanel(QGroupBox):
         self.button.setText("Conectar al ESP32")
         self.button.setToolTip("")
         state = "Sin conexión · lectura desactualizada" if self.reply.text() else "Sin conexión"
+        presentation = self.address.text().strip() == "192.168.4.1"
+        self.wifi_settings.setVisible(bool(message) and presentation and sys.platform == "win32")
         if message:
             network_hint = (
-                "Conecta el PC a la red Wi-Fi de presentación del ESP32"
-                if self.address.text().strip() == "192.168.4.1"
+                "Alimenta el ESP32 por USB y selecciona SIGMA-VIAL-Prueba-cf98 en el Wi-Fi del PC"
+                if presentation
                 else "Comprueba que el PC pueda llegar a la IP del ESP32"
             )
             endpoint = f"{self.address.text().strip()}:5050"
