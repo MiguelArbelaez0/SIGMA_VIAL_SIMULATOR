@@ -172,13 +172,11 @@ por Wi-Fi. El simulador conserva el control de los semáforos.
 Incluye percepción simulada, detección por píxeles opcional, OCR local y SQLite.
 La percepción funciona localmente con vehículos simulados.
 
-## Ramas y próxima etapa
+## Versión de presentación
 
-La preparación del entorno está en el commit `5806bd6`
-(`setup/development-environment`). La interfaz se desarrolló en `feature/intersection-ui`; la simulación funcional se
-desarrolla en `feature/functional-simulation`.
-
-Siguiente etapa: integración física, cuando la simulación local quede revisada e integrada.
+La rama `main` reúne el simulador, la interfaz y el firmware del primer ESP32.
+El procesador recibe por Wi-Fi los conteos de cola del simulador. Para incorporar
+una cámara queda por definir qué acceso observará y si entregará imágenes o conteos.
 
 ## Revisión de la interfaz
 
