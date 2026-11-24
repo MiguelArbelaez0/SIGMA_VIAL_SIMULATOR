@@ -26,6 +26,7 @@ from sigma_vial.presentation.entity_items import PedestrianGraphicsItem, Vehicle
 from sigma_vial.presentation.geometry import IntersectionGeometry
 from sigma_vial.presentation.intersection_scene import IntersectionScene
 from sigma_vial.presentation.intersection_view import IntersectionView
+from sigma_vial.presentation.wifi_panel import WifiPanel
 
 
 def text_label(text: str, name: str = "") -> QLabel:
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(root)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
+        self.wifi_panel = WifiPanel(self._queue_counts)
         outer.addWidget(self._header())
         geometry = IntersectionGeometry()
         config = SimulationConfig(
@@ -193,6 +195,7 @@ class MainWindow(QMainWindow):
         self.status_label = text_label("Vista inicial · Simulación detenida", "status")
         self.status_label.setFixedWidth(190)
         layout.addWidget(self.status_label)
+        layout.addWidget(self.wifi_panel.button)
         return header
 
     def _toggle_running(self) -> None:
@@ -515,9 +518,7 @@ class MainWindow(QMainWindow):
         automatic_layout.addWidget(text_label("ⓘ  Los semáforos deciden automáticamente.", "muted"))
         layout.addWidget(automatic_card)
         from sigma_vial.presentation.camera_card import CameraCard
-        from sigma_vial.presentation.wifi_panel import WifiPanel
 
-        self.wifi_panel = WifiPanel(self._queue_counts)
         layout.addWidget(self.wifi_panel)
         self.camera_card = CameraCard(self)
         self.camera_card.controller.framePublished.connect(self._highlight_camera_target)

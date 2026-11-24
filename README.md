@@ -167,10 +167,10 @@ del motor. Acercar, alejar y restablecer vista son independientes del reloj simu
 Parámetros pendientes de mayor validación: restricciones reales de capacidad de las
 salidas por carril, geometría individual de los cuatro cruces peatonales, calibración
 de velocidades y políticas de espera bajo obstrucciones prolongadas. La demostración
-no representa seguridad vial certificada. Hardware ESP32 y semáforos físicos siguen
-fuera de alcance.
+no representa seguridad vial certificada. El ESP32 opcional procesa la demanda
+por Wi-Fi. El simulador conserva el control de los semáforos.
 Incluye percepción simulada, detección por píxeles opcional, OCR local y SQLite.
-No utiliza nube, cámaras físicas ni hardware ESP32.
+La percepción funciona localmente con vehículos simulados.
 
 ## Ramas y próxima etapa
 
@@ -525,4 +525,11 @@ conservación de objetos estáticos. Esto no es una validación de cámaras fís
 [Ventana reducida](docs/dashboard-small.png) ·
 [Formulario en ventana reducida](docs/dashboard-small-manual.png)
 
-El [proyecto del ESP32 procesador](firmware/esp32-procesador/README.md) se compila por separado con PlatformIO.
+## Presentación con el ESP32 por Wi-Fi
+
+1. Alimenta por USB la placa con el firmware `presentacion` y conecta Windows a **SIGMA-VIAL-Prueba-cf98**.
+2. Desde la raíz del repositorio ejecuta `.\.venv\Scripts\python.exe -m sigma_vial`.
+3. Pulsa **Conectar al ESP32** en la cabecera y espera **ESP32 conectado**. El primer intento usa `192.168.4.1:5050`. Para otra IP, usa **Cambiar dirección** en **Procesador ESP32**. El panel recuerda la última IP que respondió PONG.
+4. Pulsa **Iniciar** y agrega vehículos desde **Agregar**. Al llegar a la zona de detección y detenerse, aparecerán en la siguiente muestra automática. El panel muestra el eje de mayor cola, los cuatro conteos enviados y la respuesta de la placa.
+
+[Guía para reproducir ambas colas](firmware/esp32-procesador/README.md) · [Captura con tráfico](docs/esp32-trafico-eo.png)
