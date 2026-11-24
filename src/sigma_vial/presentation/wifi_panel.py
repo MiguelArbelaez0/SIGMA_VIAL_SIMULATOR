@@ -225,6 +225,12 @@ class WifiPanel(QGroupBox):
         self.button.setText("Conectar al ESP32")
         self.button.setToolTip("")
         state = "Sin conexión · lectura desactualizada" if self.reply.text() else "Sin conexión"
-        self.status.setText(
-            f"{state}. Comprueba la red Wi-Fi del PC. {message}" if message else state
-        )
+        if message:
+            network_hint = (
+                "Conecta el PC a la red Wi-Fi de presentación del ESP32"
+                if self.address.text().strip() == "192.168.4.1"
+                else "Comprueba que el PC pueda llegar a la IP del ESP32"
+            )
+            endpoint = f"{self.address.text().strip()}:5050"
+            state = f"{state}. {network_hint} y pulsa Reintentar. {endpoint} · {message}"
+        self.status.setText(state)

@@ -526,6 +526,7 @@ conservación de objetos estáticos. Esto no es una validación de cámaras fís
 ## Presentación con el ESP32 por Wi-Fi
 
 1. Alimenta por USB la placa con el firmware `presentacion` y conecta Windows a **SIGMA-VIAL-Prueba-cf98**.
+   Si Windows sigue en **Estudiantes-CEIPA**, usa el perfil guardado con `netsh wlan connect name="SIGMA-VIAL-Prueba-cf98"`. Mantén esa red durante la demostración aunque Windows indique «Sin Internet». Si el simulador ya está abierto, pulsa **Reintentar**.
 2. Desde la raíz del repositorio ejecuta `.\.venv\Scripts\python.exe -m sigma_vial`.
 3. Pulsa **Conectar al ESP32** en la cabecera y espera **ESP32 conectado**. El primer intento usa `192.168.4.1:5050`. Para otra IP, usa **Cambiar dirección** en **Procesador ESP32**. El panel recuerda la última IP que respondió PONG.
 4. Pulsa **Iniciar** y agrega vehículos desde **Agregar**. Al llegar a la zona de detección y detenerse, aparecerán en la siguiente muestra automática. El panel muestra el eje de mayor cola, los cuatro conteos enviados y la respuesta de la placa.
