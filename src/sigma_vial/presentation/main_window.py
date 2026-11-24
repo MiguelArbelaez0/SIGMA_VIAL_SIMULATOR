@@ -479,6 +479,12 @@ class MainWindow(QMainWindow):
             combo.addItem(kind.value[0], kind)
         return combo
 
+    def _queue_counts(self):
+        traffic = self.simulation.observations().traffic
+        return tuple(
+            traffic[a].queue for a in (Access.NORTH, Access.SOUTH, Access.EAST, Access.WEST)
+        )
+
     def _sidebar(self) -> QWidget:
         panel = QFrame()
         panel.setObjectName("sidePanel")
@@ -508,7 +514,7 @@ class MainWindow(QMainWindow):
         from sigma_vial.presentation.camera_card import CameraCard
         from sigma_vial.presentation.wifi_panel import WifiPanel
 
-        self.wifi_panel = WifiPanel()
+        self.wifi_panel = WifiPanel(self._queue_counts)
         layout.addWidget(self.wifi_panel)
         self.camera_card = CameraCard(self)
         self.camera_card.controller.framePublished.connect(self._highlight_camera_target)

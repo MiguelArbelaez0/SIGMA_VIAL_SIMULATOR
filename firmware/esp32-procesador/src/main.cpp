@@ -3,6 +3,10 @@
 #include <WiFi.h>
 #include <lwip/sockets.h>
 
+#ifdef SIGMA_DEMO_AP
+#include "ap_local.h"
+#endif
+
 #if __has_include("wifi_local.h")
 #include "wifi_local.h"
 #else
@@ -37,12 +41,24 @@ bool listenIPv4() {
 }
 WiFiClient client;
 IPAddress announcedIP;
-char request[7];  // PING, CR opcional y terminador.
-size_t received = 0;
+constexpr size_t MAX_LINE = 64;
+struct LineBuffer {
+    char data[MAX_LINE + 2];
+    size_t used = 0;
+    bool invalid = false;
+};
+
+LineBuffer tcpLine;
+void readCommand(Stream& stream, LineBuffer& line, bool serialPort);
 
 void serviceWifi() {
+#ifdef SIGMA_DEMO_AP
+    const IPAddress ip = WiFi.softAPIP();
+    if (ip == IPAddress()) {
+#else
     const IPAddress ip = WiFi.localIP();
     if (WiFi.status() != WL_CONNECTED || ip == IPAddress()) {
+#endif
         if (announcedIP != IPAddress()) {
             client.stop();
             closeListener();
@@ -66,33 +82,18 @@ void serviceWifi() {
         if (fd < 0) return;
         client = WiFiClient(fd);
         if (client) Serial.printf("TCP cliente=%s\n", client.remoteIP().toString().c_str());
-        received = 0;
+        tcpLine = {};
     }
-    while (client.available()) {
-        const int ch = client.read();
-        if (ch == '\n') {
-            if (received && request[received - 1] == '\r') --received;
-            if (received == 4 && memcmp(request, "PING", 4) == 0) {
-                if (client.print("PONG\n") == 5) Serial.println("TCP PING recibido, PONG enviado");
-            } else {
-                client.stop();
-            }
-            received = 0;
-            break;
-        }
-        if (received >= sizeof(request) - 1) {
-            client.stop();
-            break;
-        }
-        request[received++] = static_cast<char>(ch);
-    }
+    readCommand(client, tcpLine, false);
+    char peek;
+    if (client.fd() >= 0 && recv(client.fd(), &peek, 1, MSG_PEEK | MSG_DONTWAIT) == 0)
+        client.stop();
 }
 
-constexpr size_t MAX_LINE = 64;
 constexpr unsigned MAX_COUNT = 9999;
 
-void processLine(char* line) {
-    if (strcmp(line, "TEST TCP") == 0) {
+void processLine(char* line, Print& output, bool serialPort) {
+    if (serialPort && strcmp(line, "TEST TCP") == 0) {
         WiFiClient probe;
         if (listener < 0 || client.connected()) {
             Serial.println("TEST TCP: escucha inactiva o cliente ocupado");
@@ -118,39 +119,39 @@ void processLine(char* line) {
     char* cursor = nullptr;
     char* command = strtok_r(line, " \t", &cursor);
     if (!command) {
-        Serial.println("ERROR comando vacio");
+        output.println("ERROR comando vacio");
         return;
     }
     char* token = strtok_r(nullptr, " \t", &cursor);
     if (strcmp(command, "PING") == 0 && !token) {
-        Serial.println("PONG");
+        output.println("PONG");
         return;
     }
     if (strcmp(command, "TRAFICO") != 0) {
-        Serial.println("ERROR comando invalido");
+        output.println("ERROR comando invalido");
         return;
     }
     unsigned counts[4] = {};
     for (unsigned& count : counts) {
         if (!token) {
-            Serial.println("ERROR se requieren cuatro valores");
+            output.println("ERROR se requieren cuatro valores");
             return;
         }
         for (const char* digit = token; *digit; ++digit) {
             if (*digit < '0' || *digit > '9') {
-                Serial.println("ERROR se requiere un entero decimal de 0 a 9999");
+                output.println("ERROR se requiere un entero decimal de 0 a 9999");
                 return;
             }
             count = count * 10 + (*digit - '0');
             if (count > MAX_COUNT) {
-                Serial.println("ERROR valor fuera de rango 0 a 9999");
+                output.println("ERROR valor fuera de rango 0 a 9999");
                 return;
             }
         }
         token = strtok_r(nullptr, " \t", &cursor);
     }
     if (token) {
-        Serial.println("ERROR sobran valores");
+        output.println("ERROR sobran valores");
         return;
     }
     const unsigned ns = counts[0] + counts[1];
@@ -160,11 +161,16 @@ void processLine(char* line) {
     if (!total) mayor = "SIN_DEMANDA";
     else if (ns > eo) mayor = "NS";
     else if (eo > ns) mayor = "EO";
-    Serial.printf("OK NS=%u EO=%u TOTAL=%u MAYOR=%s\n", ns, eo, total, mayor);
+    output.printf("OK NS=%u EO=%u TOTAL=%u MAYOR=%s\n", ns, eo, total, mayor);
 }
 
 void setup() {
     Serial.begin(115200);
+#ifdef SIGMA_DEMO_AP
+    WiFi.persistent(false);
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(SIGMA_AP_SSID, SIGMA_AP_PASSWORD);
+#else
     if (SIGMA_WIFI_PASSWORD[0]) {
         WiFi.persistent(false);
         WiFi.mode(WIFI_STA);
@@ -173,29 +179,33 @@ void setup() {
     } else {
         Serial.println("Wi-Fi pendiente: configure wifi_local.h");
     }
+#endif
+}
+
+void readCommand(Stream& stream, LineBuffer& line, bool serialPort) {
+    while (stream.available()) {
+        const int ch = stream.read();
+        if (ch == '\n') {
+            if (line.used && line.data[line.used - 1] == '\r') --line.used;
+            if (line.invalid || line.used > MAX_LINE) {
+                stream.println("ERROR linea invalida o mayor de 64 bytes");
+            } else {
+                line.data[line.used] = '\0';
+                processLine(line.data, stream, serialPort);
+            }
+            line = {};
+            return;
+        }
+        if (ch <= 0 || ch > 127 || line.used == sizeof(line.data) - 1) {
+            line.invalid = true;
+        } else {
+            line.data[line.used++] = static_cast<char>(ch);
+        }
+    }
 }
 
 void loop() {
-    if (SIGMA_WIFI_PASSWORD[0]) serviceWifi();
-    static char line[MAX_LINE + 2];  // Espacio para CR opcional y terminador.
-    static size_t used = 0;
-    static bool invalid = false;
-    while (Serial.available()) {
-        const int ch = Serial.read();
-        if (ch == '\n') {
-            if (used && line[used - 1] == '\r') --used;
-            if (invalid || used > MAX_LINE) {
-                Serial.println("ERROR linea invalida o mayor de 64 bytes");
-            } else {
-                line[used] = '\0';
-                processLine(line);
-            }
-            used = 0;
-            invalid = false;
-        } else if (ch <= 0 || ch > 127 || used == sizeof(line) - 1) {
-            invalid = true;
-        } else {
-            line[used++] = static_cast<char>(ch);
-        }
-    }
+    serviceWifi();
+    static LineBuffer serialLine;
+    readCommand(Serial, serialLine, true);
 }
