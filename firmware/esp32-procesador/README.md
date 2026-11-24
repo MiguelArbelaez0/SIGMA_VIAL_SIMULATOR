@@ -35,3 +35,5 @@ El firmware usa el SSID `Estudiantes-CEIPA` y obtiene su IPv4 por DHCP. Antes de
 ```
 
 Después de cargar el firmware, abre el monitor serie a 115200 baudios. Si la conexión ya se estableció antes de abrirlo, pulsa EN para reiniciar la placa. Copia la dirección de la línea `IP=<dirección asignada> TCP=5050` en **ESP32 por Wi-Fi** en el simulador y pulsa **Conectar**. El PC debe tener acceso a la IP de la placa por TCP 5050. La confirmación aparece al recibir la línea `PONG`. El procesamiento de muestras por USB sigue disponible.
+
+El mensaje `LISTEN` se emite después de abrir la escucha IPv4. Con el panel desconectado, la orden serie `TEST TCP` prueba el servidor mediante una conexión TCP interna del ESP32 por 127.0.0.1. Para verificar el trayecto inalámbrico, conecta el panel y compara su confirmación con la IP del cliente y el envío de PONG que registra la placa.

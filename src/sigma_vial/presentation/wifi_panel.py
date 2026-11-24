@@ -52,12 +52,23 @@ class WifiPanel(QGroupBox):
             else:
                 finish("Respuesta TCP inesperada")
 
-        socket.connected.connect(lambda: socket.write(b"PING\n"))
+        def send_ping():
+            self.status.setText("Esperando PONG…")
+            socket.write(b"PING\n")
+            timer.start(5000)
+
+        def timeout():
+            if socket.state() == QAbstractSocket.SocketState.ConnectedState:
+                finish("TCP establecido, pero no llegó PONG")
+            else:
+                finish("Tiempo agotado al conectar al puerto TCP 5050")
+
+        socket.connected.connect(send_ping)
         socket.readyRead.connect(receive)
         socket.errorOccurred.connect(lambda _: finish(socket.errorString()))
         socket.disconnected.connect(lambda: finish("Desconectado"))
-        timer.timeout.connect(lambda: finish("Tiempo de espera agotado sin PONG"))
-        self.status.setText("Esperando PONG…")
+        timer.timeout.connect(timeout)
+        self.status.setText("Conectando al puerto TCP 5050…")
         self.button.setText("Desconectar")
         self.address.setEnabled(False)
         timer.start(5000)

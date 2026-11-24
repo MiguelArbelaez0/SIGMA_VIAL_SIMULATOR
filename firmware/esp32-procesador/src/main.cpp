@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <cstring>
 #include <WiFi.h>
+#include <lwip/sockets.h>
 
 #if __has_include("wifi_local.h")
 #include "wifi_local.h"
@@ -10,7 +11,30 @@
 
 constexpr char WIFI_SSID[] = "Estudiantes-CEIPA";
 constexpr uint16_t TCP_PORT = 5050;
-WiFiServer server(TCP_PORT);
+int listener = -1;
+
+void closeListener() {
+    if (listener >= 0) lwip_close(listener);
+    listener = -1;
+}
+
+bool listenIPv4() {
+    listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listener < 0) return false;
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(TCP_PORT);
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    const int reuse = 1;
+    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    if (bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0 &&
+        listen(listener, 4) == 0 && fcntl(listener, F_SETFL, O_NONBLOCK) == 0) {
+        return true;
+    }
+    Serial.printf("TCP error=%d\n", errno);
+    closeListener();
+    return false;
+}
 WiFiClient client;
 IPAddress announcedIP;
 char request[7];  // PING, CR opcional y terminador.
@@ -21,20 +45,27 @@ void serviceWifi() {
     if (WiFi.status() != WL_CONNECTED || ip == IPAddress()) {
         if (announcedIP != IPAddress()) {
             client.stop();
-            server.end();
+            closeListener();
             announcedIP = IPAddress();
         }
         return;
     }
     if (ip != announcedIP) {
         client.stop();
-        server.end();
-        server.begin();
+        closeListener();
+        if (!listenIPv4()) {
+            Serial.println("TCP 5050: fallo al abrir la escucha");
+            delay(250);
+            return;
+        }
         announcedIP = ip;
-        Serial.printf("IP=%s TCP=%u\n", ip.toString().c_str(), TCP_PORT);
+        Serial.printf("LISTEN IP=%s TCP=%u\n", ip.toString().c_str(), TCP_PORT);
     }
     if (!client.connected()) {
-        client = server.accept();
+        const int fd = accept(listener, nullptr, nullptr);
+        if (fd < 0) return;
+        client = WiFiClient(fd);
+        if (client) Serial.printf("TCP cliente=%s\n", client.remoteIP().toString().c_str());
         received = 0;
     }
     while (client.available()) {
@@ -42,7 +73,7 @@ void serviceWifi() {
         if (ch == '\n') {
             if (received && request[received - 1] == '\r') --received;
             if (received == 4 && memcmp(request, "PING", 4) == 0) {
-                client.print("PONG\n");
+                if (client.print("PONG\n") == 5) Serial.println("TCP PING recibido, PONG enviado");
             } else {
                 client.stop();
             }
@@ -61,6 +92,29 @@ constexpr size_t MAX_LINE = 64;
 constexpr unsigned MAX_COUNT = 9999;
 
 void processLine(char* line) {
+    if (strcmp(line, "TEST TCP") == 0) {
+        WiFiClient probe;
+        if (listener < 0 || client.connected()) {
+            Serial.println("TEST TCP: escucha inactiva o cliente ocupado");
+            return;
+        }
+        if (!probe.connect(IPAddress(127, 0, 0, 1), TCP_PORT, 1000)) {
+            Serial.printf("TEST TCP: fallo de loopback errno=%d\n", errno);
+            return;
+        }
+        probe.print("PING\n");
+        const unsigned long start = millis();
+        while (millis() - start < 1000 && !probe.available()) {
+            serviceWifi();
+            delay(1);
+        }
+        probe.setTimeout(200);
+        Serial.print("TEST TCP local: ");
+        Serial.println(probe.readStringUntil('\n'));
+        probe.stop();
+        client.stop();
+        return;
+    }
     char* cursor = nullptr;
     char* command = strtok_r(line, " \t", &cursor);
     if (!command) {
