@@ -77,13 +77,15 @@ void serviceWifi() {
         announcedIP = ip;
         Serial.printf("LISTEN IP=%s TCP=%u\n", ip.toString().c_str(), TCP_PORT);
     }
-    if (!client.connected()) {
-        const int fd = accept(listener, nullptr, nullptr);
-        if (fd < 0) return;
+    // Una sesión interrumpida por pérdida de Wi-Fi puede seguir abierta en TCP.
+    const int fd = accept(listener, nullptr, nullptr);
+    if (fd >= 0) {
+        client.stop();
         client = WiFiClient(fd);
         if (client) Serial.printf("TCP cliente=%s\n", client.remoteIP().toString().c_str());
         tcpLine = {};
     }
+    if (!client.connected()) return;
     readCommand(client, tcpLine, false);
     char peek;
     if (client.fd() >= 0 && recv(client.fd(), &peek, 1, MSG_PEEK | MSG_DONTWAIT) == 0)

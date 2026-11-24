@@ -197,6 +197,7 @@ class MainWindow(QMainWindow):
 
     def _toggle_running(self) -> None:
         self.simulation.running = not self.simulation.running
+        self.wifi_panel.set_running(self.simulation.running)
         self.has_started = self.has_started or self.simulation.running
         if self.simulation.running:
             self.simulation_timer.start()
@@ -378,6 +379,7 @@ class MainWindow(QMainWindow):
 
     def _reset_simulation(self) -> None:
         self.simulation_timer.stop()
+        self.wifi_panel.reset_samples()
         self.simulation.reset()
         self._set_sensor_interval(self.sensor_interval.value())
         self.has_started = False
@@ -402,6 +404,7 @@ class MainWindow(QMainWindow):
         self.simulation_timer.stop()
         self._clear_entity_items()
         self.camera_card.controller.reset_tracking()
+        self.wifi_panel.reset_samples()
         self.simulation.load_scenario(self.scenario_combo.currentData())
         self._set_sensor_interval(self.sensor_interval.value())
         self._sync_entities()
