@@ -72,7 +72,6 @@ class WifiPanel(QGroupBox):
         self.retry = QTimer(self)
         self.retry.setSingleShot(True)
         self.retry.timeout.connect(self.connect_device)
-        self.recovering = False
 
     def edit_address(self):
         self.disconnect_device()
@@ -135,12 +134,9 @@ class WifiPanel(QGroupBox):
 
         def finish(message):
             if self.socket is socket:
-                recover = self.ready or self.recovering
                 self.disconnect_device(message)
-                self.recovering = recover
                 self.button.setText("Reintentar")
-                if recover:
-                    self.retry.start(4000)
+                self.retry.start(4000)
 
         def receive():
             if self.socket is not socket:
@@ -200,7 +196,7 @@ class WifiPanel(QGroupBox):
         timer.timeout.connect(timeout)
         self.status.setText(
             "Reconectando · lectura desactualizada"
-            if self.recovering
+            if self.reply.text()
             else "Conectando al puerto TCP 5050…"
         )
         self.button.setText("Conectando…")
@@ -213,7 +209,6 @@ class WifiPanel(QGroupBox):
         self.retry.stop()
         self.auto_timer.stop()
         self.ready = False
-        self.recovering = False
         self.result.hide()
         self.pending = None
         socket, self.socket = self.socket, None
@@ -232,5 +227,5 @@ class WifiPanel(QGroupBox):
                 else "Comprueba que el PC pueda llegar a la IP del ESP32"
             )
             endpoint = f"{self.address.text().strip()}:5050"
-            state = f"{state}. {network_hint} y pulsa Reintentar. {endpoint} · {message}"
+            state = f"{state}. {network_hint}. Reintento automático. {endpoint} · {message}"
         self.status.setText(state)

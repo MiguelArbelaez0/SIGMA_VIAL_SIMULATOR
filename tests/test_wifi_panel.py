@@ -95,3 +95,25 @@ def test_auto_sample_keeps_request_until_reply_and_discards_it_on_reset(qtbot, s
     assert panel.reply.text() == "" and not panel.ready
     panel.disconnect_device()
     server.close()
+
+
+def test_first_connection_recovers_when_processor_starts_later(qtbot, settings):
+    panel = WifiPanel(lambda: (0, 0, 3, 2), settings)
+    qtbot.addWidget(panel)
+    panel.address.setText("127.0.0.1")
+    panel.set_running(True)
+    panel.button.click()
+    qtbot.waitUntil(panel.retry.isActive)
+    server = QTcpServer()
+    assert server.listen(QHostAddress.SpecialAddress.LocalHost, 5050)
+    qtbot.waitUntil(server.hasPendingConnections, timeout=6500)
+    peer = server.nextPendingConnection()
+    qtbot.waitUntil(peer.canReadLine)
+    assert bytes(peer.readLine()) == b"PING\n"
+    peer.write(b"PONG\n")
+    qtbot.waitUntil(peer.canReadLine, timeout=2500)
+    assert bytes(peer.readLine()) == b"TRAFICO 0 0 3 2\n"
+    peer.write(b"OK NS=0 EO=5 TOTAL=5 MAYOR=EO\n")
+    qtbot.waitUntil(lambda: panel.status.text() == "Datos actuales")
+    panel.disconnect_device()
+    server.close()
