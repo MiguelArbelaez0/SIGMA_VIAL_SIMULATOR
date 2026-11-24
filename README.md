@@ -532,3 +532,13 @@ conservación de objetos estáticos. Esto no es una validación de cámaras fís
 4. Pulsa **Iniciar** y agrega vehículos desde **Agregar**. Al llegar a la zona de detección y detenerse, aparecerán en la siguiente muestra automática. El panel muestra el eje de mayor cola, los cuatro conteos enviados y la respuesta de la placa.
 
 [Guía para reproducir ambas colas](firmware/esp32-procesador/README.md) · [Captura con tráfico](docs/esp32-trafico-eo.png)
+
+## Central de Monitoreo de cámaras Wi-Fi
+
+1. En Windows, abre PowerShell en la raíz del repositorio. La central reutiliza OpenCV del extra de visión. Para instalarlo en el entorno del proyecto ejecuta `.\.venv\Scripts\python.exe -m pip install -e ".[vision]"`. Abre SIGMA VIAL con `.\.venv\Scripts\python.exe -m sigma_vial`.
+2. Alimenta la cámara y conecta el PC a una red desde la que puedas abrir su transmisión HTTP. Pulsa **Central de Monitoreo** en la ventana principal. Los paneles superiores son **Norte** y **Sur**. Los inferiores son **Oriente** y **Occidente**.
+3. En el acceso elegido pulsa **Configurar cámara**. Confirma la sugerencia `http://172.20.10.2/stream` o escribe la URL de video HTTP(S) de tu cámara. **Aceptar** guarda la asignación en este PC e inicia la conexión. **En vivo** aparece al decodificar video. Si la cámara pierde señal, se retira la imagen y aparece **Reintentar**.
+4. Repite el paso anterior en cada acceso cuando tengas las otras cámaras. En **Opciones** puedes editar la URL, mover la cámara a un acceso libre o quitar la asignación. **Desconectar** conserva la URL. Al volver a abrir la central, pulsa **Conectar** en los accesos que quieras ver.
+5. Usa **Ampliar** y **Volver a la cuadrícula** para cambiar de vista. Cerrar la central detiene las transmisiones. Desde la misma ventana puedes abrir **Monitoreo simulado y laboratorio de visión**.
+
+Las cámaras físicas en esta fase solo muestran video. La simulación y el procesador de demanda conservan su fuente de observaciones. Para ver cámaras y procesador al mismo tiempo, el PC necesita una ruta de red hacia cada dispositivo.

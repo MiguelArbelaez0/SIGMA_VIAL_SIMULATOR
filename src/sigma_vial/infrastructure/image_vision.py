@@ -20,6 +20,11 @@ class ImageSource(Protocol):
     def close(self) -> None: ...
 
 
+def read_next_frame(capture, timestamp):
+    ok, pixels = capture.read()
+    return ImageFrame(pixels, timestamp) if ok else None
+
+
 class LocalVideoSource:
     def __init__(self, path: str):
         import cv2
@@ -32,8 +37,7 @@ class LocalVideoSource:
         import cv2
 
         self.capture.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000)
-        ok, pixels = self.capture.read()
-        return ImageFrame(pixels, timestamp) if ok else None
+        return read_next_frame(self.capture, timestamp)
 
     def close(self):
         self.capture.release()

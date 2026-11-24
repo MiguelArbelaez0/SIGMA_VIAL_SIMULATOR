@@ -453,8 +453,8 @@ class MainWindow(QMainWindow):
         row.addWidget(self.speed)
         self.clock_label = text_label("Reloj simulado: 00:00:00", "clock")
         row.addWidget(self.clock_label, 1)
-        monitoring = QPushButton("Centro de monitoreo")
-        monitoring.clicked.connect(self._open_monitoring)
+        monitoring = QPushButton("Central de Monitoreo")
+        monitoring.clicked.connect(self._open_camera_central)
         row.addWidget(monitoring)
         return bar
 
@@ -846,6 +846,15 @@ class MainWindow(QMainWindow):
                 return
         self.vehicle_details.setText("Selecciona un vehículo para inspeccionarlo.")
 
+    def _open_camera_central(self):
+        from sigma_vial.presentation.camera_central import CameraCentral
+
+        if getattr(self, "camera_central", None) is None:
+            self.camera_central = CameraCentral(self)
+            self.camera_central.openLaboratory.connect(self._open_monitoring)
+        self.camera_central.show()
+        self.camera_central.raise_()
+
     def _open_monitoring(self):
         from sigma_vial.presentation.monitoring import MonitoringCenter
 
@@ -858,6 +867,8 @@ class MainWindow(QMainWindow):
         self.monitoring_center.raise_()
 
     def closeEvent(self, event):
+        if getattr(self, "camera_central", None) is not None:
+            self.camera_central.close()
         self.wifi_panel.disconnect_device()
         self.simulation_timer.stop()
         if self.camera_card.controller is not None:
