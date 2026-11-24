@@ -25,3 +25,13 @@ ESP32 responde: OK NS=6 EO=8 TOTAL=14 MAYOR=EO
 ```
 
 Los valores de `MAYOR` son `NS`, `EO`, `EMPATE` y `SIN_DEMANDA` (total cero).
+## Conexión Wi-Fi desde SIGMA VIAL
+
+El firmware usa el SSID `Estudiantes-CEIPA` y obtiene su IPv4 por DHCP. Antes de compilar para la placa, guarda la clave en el archivo privado `include/wifi_local.h` de este proyecto. Git excluye ese archivo. En un checkout nuevo créalo con estas dos líneas y escribe la clave entre los paréntesis:
+
+```cpp
+#pragma once
+#define SIGMA_WIFI_PASSWORD R"wifi()wifi"
+```
+
+Después de cargar el firmware, abre el monitor serie a 115200 baudios. Si la conexión ya se estableció antes de abrirlo, pulsa EN para reiniciar la placa. Copia la dirección de la línea `IP=<dirección asignada> TCP=5050` en **ESP32 por Wi-Fi** en el simulador y pulsa **Conectar**. El PC debe tener acceso a la IP de la placa por TCP 5050. La confirmación aparece al recibir la línea `PONG`. El procesamiento de muestras por USB sigue disponible.

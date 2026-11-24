@@ -1,5 +1,61 @@
 #include <Arduino.h>
 #include <cstring>
+#include <WiFi.h>
+
+#if __has_include("wifi_local.h")
+#include "wifi_local.h"
+#else
+#define SIGMA_WIFI_PASSWORD ""
+#endif
+
+constexpr char WIFI_SSID[] = "Estudiantes-CEIPA";
+constexpr uint16_t TCP_PORT = 5050;
+WiFiServer server(TCP_PORT);
+WiFiClient client;
+IPAddress announcedIP;
+char request[7];  // PING, CR opcional y terminador.
+size_t received = 0;
+
+void serviceWifi() {
+    const IPAddress ip = WiFi.localIP();
+    if (WiFi.status() != WL_CONNECTED || ip == IPAddress()) {
+        if (announcedIP != IPAddress()) {
+            client.stop();
+            server.end();
+            announcedIP = IPAddress();
+        }
+        return;
+    }
+    if (ip != announcedIP) {
+        client.stop();
+        server.end();
+        server.begin();
+        announcedIP = ip;
+        Serial.printf("IP=%s TCP=%u\n", ip.toString().c_str(), TCP_PORT);
+    }
+    if (!client.connected()) {
+        client = server.accept();
+        received = 0;
+    }
+    while (client.available()) {
+        const int ch = client.read();
+        if (ch == '\n') {
+            if (received && request[received - 1] == '\r') --received;
+            if (received == 4 && memcmp(request, "PING", 4) == 0) {
+                client.print("PONG\n");
+            } else {
+                client.stop();
+            }
+            received = 0;
+            break;
+        }
+        if (received >= sizeof(request) - 1) {
+            client.stop();
+            break;
+        }
+        request[received++] = static_cast<char>(ch);
+    }
+}
 
 constexpr size_t MAX_LINE = 64;
 constexpr unsigned MAX_COUNT = 9999;
@@ -55,9 +111,18 @@ void processLine(char* line) {
 
 void setup() {
     Serial.begin(115200);
+    if (SIGMA_WIFI_PASSWORD[0]) {
+        WiFi.persistent(false);
+        WiFi.mode(WIFI_STA);
+        WiFi.setAutoReconnect(true);
+        WiFi.begin(WIFI_SSID, SIGMA_WIFI_PASSWORD);  // DHCP por defecto.
+    } else {
+        Serial.println("Wi-Fi pendiente: configure wifi_local.h");
+    }
 }
 
 void loop() {
+    if (SIGMA_WIFI_PASSWORD[0]) serviceWifi();
     static char line[MAX_LINE + 2];  // Espacio para CR opcional y terminador.
     static size_t used = 0;
     static bool invalid = false;

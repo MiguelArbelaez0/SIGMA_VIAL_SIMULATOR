@@ -506,7 +506,10 @@ class MainWindow(QMainWindow):
         automatic_layout.addWidget(text_label("ⓘ  Los semáforos deciden automáticamente.", "muted"))
         layout.addWidget(automatic_card)
         from sigma_vial.presentation.camera_card import CameraCard
+        from sigma_vial.presentation.wifi_panel import WifiPanel
 
+        self.wifi_panel = WifiPanel()
+        layout.addWidget(self.wifi_panel)
         self.camera_card = CameraCard(self)
         self.camera_card.controller.framePublished.connect(self._highlight_camera_target)
         layout.addWidget(self.camera_card, 1)
@@ -845,6 +848,7 @@ class MainWindow(QMainWindow):
         self.monitoring_center.raise_()
 
     def closeEvent(self, event):
+        self.wifi_panel.disconnect_device()
         self.simulation_timer.stop()
         if self.camera_card.controller is not None:
             self.camera_card.controller.close()
