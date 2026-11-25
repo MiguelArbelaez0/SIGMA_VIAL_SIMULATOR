@@ -8,8 +8,8 @@ from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QFrame,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -25,6 +25,32 @@ from sigma_vial.domain.scenario import Access
 from sigma_vial.infrastructure.live_stream import LiveStream
 
 SUGGESTED_URL = "http://172.20.10.2/stream"
+
+CENTRAL_STYLE = """
+QDialog#cameraCentral { background: #101d2c; }
+QFrame#cameraPanel { background: #203247; border: 1px solid #64788d; border-radius: 8px; }
+QLabel#cameraTitle { color: #ffffff; font-size: 18px; font-weight: 700; }
+QLabel#cameraState { color: #dbe9f6; font-size: 14px; font-weight: 600; }
+QPushButton, QToolButton {
+    color: #142b44; background: #f4f7fb; border: 2px solid #acbbcc;
+    border-radius: 6px; padding: 6px 12px;
+}
+QToolButton { padding-right: 22px; }
+QPushButton:hover, QToolButton:hover, QToolButton:open {
+    color: #142b44; background: #d6eafe; border-color: #7ea4c5;
+}
+QPushButton:focus, QToolButton:focus { border-color: #08709c; }
+QToolButton::menu-indicator { subcontrol-position: right center; right: 6px; }
+QMenu {
+    color: #142b44; background: #f4f7fb; border: 1px solid #617890; padding: 4px;
+}
+QMenu::item {
+    color: #142b44; background: #f4f7fb; padding: 7px 30px 7px 12px;
+    border: 2px solid transparent; border-radius: 3px;
+}
+QMenu::item:selected { color: #102942; background: #c5e3fc; border-color: #216a98; }
+QMenu::item:disabled { color: #586778; background: #e7ecf1; }
+"""
 
 
 def camera_url(text):
@@ -62,16 +88,22 @@ class VideoDisplay(QWidget):
             painter.drawImage(target, self.image)
 
 
-class CameraPanel(QGroupBox):
+class CameraPanel(QFrame):
     def __init__(self, central, access):
-        super().__init__(access.value)
+        super().__init__()
+        self.setObjectName("cameraPanel")
+        self.setAccessibleName(access.value)
+        title = QLabel(access.value)
+        title.setObjectName("cameraTitle")
         self.video = VideoDisplay()
         self.state = QLabel()
+        self.state.setObjectName("cameraState")
         self.connect_button = QPushButton()
         self.connect_button.clicked.connect(lambda: central.toggle(access))
         self.expand = QPushButton("Ampliar")
         self.expand.clicked.connect(lambda: central.focus_camera(access))
         self.options = QToolButton()
+        self.options.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.options.setText("Opciones")
         self.options.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.options)
@@ -89,7 +121,11 @@ class CameraPanel(QGroupBox):
         for widget in (self.connect_button, self.options, self.expand):
             controls.addWidget(widget)
         layout = QVBoxLayout(self)
-        layout.addWidget(self.state)
+        layout.setContentsMargins(12, 10, 12, 12)
+        header = QHBoxLayout()
+        header.addWidget(title, 1)
+        header.addWidget(self.state)
+        layout.addLayout(header)
         layout.addWidget(self.video, 1)
         layout.addLayout(controls)
 
@@ -107,6 +143,8 @@ class CameraCentral(QDialog):
 
     def __init__(self, owner, settings=None):
         super().__init__(owner)
+        self.setObjectName("cameraCentral")
+        self.setStyleSheet(CENTRAL_STYLE)
         self.setWindowTitle("SIGMA VIAL · Central de Monitoreo")
         self.resize(1024, 700)
         self.settings = settings if settings is not None else QSettings("SIGMA VIAL", "Cámaras")
