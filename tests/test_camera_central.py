@@ -80,6 +80,18 @@ def test_four_camera_lifecycle(qtbot, tmp_path):
             center.assign(e, red)
         center.focus_camera(n)
         assert panels[s].isHidden()
+        streams = center.streams.copy()
+        center.showMinimized()
+        qtbot.waitUntil(center.isMinimized)
+        keys = [panels[a].video.image.cacheKey() for a in (n, s)]
+        qtbot.waitUntil(
+            lambda: all(
+                panels[a].video.image.cacheKey() != k for a, k in zip((n, s), keys, strict=True)
+            )
+        )
+        center.showNormal()
+        assert center.focused == n
+        assert center.streams == streams
         center.focus_camera(n)
         assert panels[s].isVisible()
         assert first.connections == second.connections == 1

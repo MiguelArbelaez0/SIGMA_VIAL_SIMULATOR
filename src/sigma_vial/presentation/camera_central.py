@@ -146,6 +146,7 @@ class CameraCentral(QDialog):
 
     def __init__(self, owner, settings=None):
         super().__init__(owner)
+        self.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint)
         self.setObjectName("cameraCentral")
         self.setStyleSheet(CENTRAL_STYLE)
         self.setWindowTitle("SIGMA VIAL · Central de Monitoreo")
@@ -295,9 +296,9 @@ class CameraCentral(QDialog):
             panel.setVisible(self.focused in (None, which))
             panel.expand.setText("Volver a la cuadrícula" if self.focused == which else "Ampliar")
 
-    def hideEvent(self, event):
+    def done(self, result):
         for access in tuple(self.active):
             self.stop(access)
         if self.focused:
             self.focus_camera(self.focused)
-        super().hideEvent(event)
+        super().done(result)

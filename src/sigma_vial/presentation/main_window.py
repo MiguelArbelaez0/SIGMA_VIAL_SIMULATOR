@@ -852,8 +852,12 @@ class MainWindow(QMainWindow):
         if getattr(self, "camera_central", None) is None:
             self.camera_central = CameraCentral(self)
             self.camera_central.openLaboratory.connect(self._open_monitoring)
-        self.camera_central.show()
+        if self.camera_central.isMinimized():
+            self.camera_central.showNormal()
+        else:
+            self.camera_central.show()
         self.camera_central.raise_()
+        self.camera_central.activateWindow()
 
     def _open_monitoring(self):
         from sigma_vial.presentation.monitoring import MonitoringCenter
