@@ -14,6 +14,7 @@ class LiveStream(Thread):
         self.stopping = Event()
         self.lock = Lock()
         self.latest = None
+        self.north_token = None
         self.error = ""
         self.last_received = monotonic()
 
@@ -30,10 +31,12 @@ class LiveStream(Thread):
             if com_port(self.url):
                 import numpy as np
 
-                for jpeg in camera_jpegs(self.url, self.stopping):
+                for jpeg, token, count in camera_jpegs(
+                    self.url, self.stopping, lambda: self.north_token
+                ):
                     pixels = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
                     if pixels is not None:
-                        self.publish(ImageFrame(pixels, monotonic()))
+                        self.publish(ImageFrame(pixels, monotonic(), token, count))
                 return
 
             capture = cv2.VideoCapture(

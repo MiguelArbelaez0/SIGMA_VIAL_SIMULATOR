@@ -138,3 +138,37 @@ def test_windows_wifi_output_distinguishes_current_and_visible_ssids():
     assert wlan_ssids(b" SSID : Estudiantes-CEIPA\r\n BSSID : aa:bb\r\n") == {b"Estudiantes-CEIPA"}
     output = b"SSID 1 : SIGMA-VIAL-Prueba-cf98\r\nSSID 2 : iPhone de Isaid\r\n"
     assert wlan_ssids(output) == {b"SIGMA-VIAL-Prueba-cf98", b"iPhone de Isaid"}
+
+
+def test_camera_replaces_only_north_and_decision_requires_current_calibration(qtbot, settings):
+    server = QTcpServer()
+    assert server.listen(QHostAddress.SpecialAddress.LocalHost, 5050)
+    token = object()
+    observation = (token, 3)
+    panel = WifiPanel(lambda: (99, 2, 1, 0), settings, lambda: observation)
+    qtbot.addWidget(panel)
+    panel.address.setText("127.0.0.1")
+    panel.set_running(True)
+    panel.button.click()
+    qtbot.waitUntil(server.hasPendingConnections)
+    peer = server.nextPendingConnection()
+    qtbot.waitUntil(peer.canReadLine)
+    assert bytes(peer.readLine()) == b"PING\n"
+    peer.write(b"PONG\n")
+    qtbot.waitUntil(peer.canReadLine, timeout=3000)
+    assert bytes(peer.readLine()) == b"TRAFICO 3 2 1 0\n"
+    peer.write(b"OK NS=5 EO=1 TOTAL=6 MAYOR=NS\n")
+    qtbot.waitUntil(lambda: panel.processor_axis() == "ns")
+    assert "Norte medido por cámara" in panel.counts.text()
+    observation = (object(), 0)
+    assert panel.processor_axis() is None
+    qtbot.waitUntil(peer.canReadLine, timeout=3000)
+    assert bytes(peer.readLine()) == b"TRAFICO 0 2 1 0\n"
+    observation = None
+    peer.write(b"OK NS=2 EO=1 TOTAL=3 MAYOR=NS\n")
+    qtbot.waitUntil(panel.sample_button.isEnabled)
+    assert panel.processor_axis() is None
+    qtbot.waitUntil(peer.canReadLine, timeout=3000)
+    assert bytes(peer.readLine()) == b"TRAFICO 99 2 1 0\n"
+    panel.disconnect_device()
+    server.close()

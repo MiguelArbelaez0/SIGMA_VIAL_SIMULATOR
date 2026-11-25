@@ -50,7 +50,7 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(root)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        self.wifi_panel = WifiPanel(self._queue_counts)
+        self.wifi_panel = WifiPanel(self._queue_counts, north_observation=self._north_observation)
         outer.addWidget(self._header())
         geometry = IntersectionGeometry()
         config = SimulationConfig(
@@ -209,6 +209,7 @@ class MainWindow(QMainWindow):
         self._refresh_simulation()
 
     def _advance_simulation(self) -> None:
+        self.simulation.processor_axis = self.wifi_panel.processor_axis()
         self.simulation.advance(0.05 * float(self.speed.currentData()))
         self._sync_entities()
         self._sync_signals()
@@ -484,6 +485,10 @@ class MainWindow(QMainWindow):
         for kind in VehicleType:
             combo.addItem(kind.value[0], kind)
         return combo
+
+    def _north_observation(self):
+        central = getattr(self, "camera_central", None)
+        return central.north_observation() if central else None
 
     def _queue_counts(self):
         traffic = self.simulation.observations().traffic

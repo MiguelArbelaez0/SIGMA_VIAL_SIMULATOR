@@ -154,6 +154,7 @@ class Simulation:
     _served: deque = field(default_factory=lambda: deque(maxlen=32), repr=False)
     _arrival_due: dict[Access, float] = field(default_factory=dict)
     _pedestrian_due: float = 0
+    processor_axis: str | None = None
 
     def __post_init__(self) -> None:
         if self.observation_source is None:
@@ -357,6 +358,9 @@ class Simulation:
         elif pedestrian_waiting and not ns_demand and not ew_demand:
             key = "pedestrian"
             reason = "Atención de peatones en espera."
+        elif self.processor_axis in ("ns", "ew"):
+            key = self.processor_axis
+            reason = "Eje prioritario indicado por el ESP32 con la cámara Norte."
         else:
             if ns_demand and not ew_demand:
                 key, reason = "ns", "Atención de la demanda Norte–Sur."
@@ -581,7 +585,12 @@ class Simulation:
             )
             return
         if self.phase is Phase.IDLE:
-            if self.axis_demand("ns") or self.axis_demand("ew") or self.pedestrian_waiting():
+            if (
+                self.processor_axis
+                or self.axis_demand("ns")
+                or self.axis_demand("ew")
+                or self.pedestrian_waiting()
+            ):
                 self._choose_phase()
             return
         if self.phase in (Phase.NS_GREEN, Phase.EW_GREEN):
@@ -616,6 +625,10 @@ class Simulation:
                 )
                 return
 
+            if self.processor_axis == opposite_axis:
+                self._request_phase_change(opposite_axis, "Cambio de eje indicado por el ESP32.")
+                return
+
             if opposing_demand == 0:
                 self._opposing_advantage_time = 0
                 self.decision = (
@@ -639,6 +652,9 @@ class Simulation:
                 )
                 return
 
+            if self.processor_axis == active_axis:
+                self.decision = "El ESP32 mantiene el eje con mayor fila."
+                return
             if active_demand == 0 and self._empty_time >= self.config.empty_interval:
                 self._request_phase_change(
                     opposite_axis,

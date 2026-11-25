@@ -14,6 +14,25 @@ def quiet_rates(sim: Simulation) -> Simulation:
     return sim
 
 
+def test_physical_priority_changes_axis_after_minimum_green_and_clearance():
+    sim = quiet_rates(Simulation(running=True, processor_axis="ew"))
+    sim.advance(0.05)
+    assert sim.phase is Phase.EW_GREEN
+    sim.processor_axis = "ns"
+    sim.advance(sim.config.min_green - 0.1)
+    assert sim.phase is Phase.EW_GREEN
+    sim.advance(0.2)
+    assert sim.phase is Phase.EW_YELLOW
+    sim.advance(sim.config.yellow + 0.1)
+    assert sim.phase is Phase.CLEARANCE
+    sim.advance(sim.config.vehicle_clearance + 0.1)
+    assert sim.phase is Phase.NS_GREEN
+    sim.add_pedestrian(Access.EAST)
+    sim.add_pedestrian(Access.WEST)
+    sim.advance(sim.config.min_green + 0.2)
+    assert sim.phase is Phase.NS_YELLOW and sim._pending_phase is Phase.WALK
+
+
 def start_in_camera_range(sim: Simulation) -> None:
     """Prepara vehículos observables para las pruebas de cambio de fase."""
     for vehicle in sim.vehicles:

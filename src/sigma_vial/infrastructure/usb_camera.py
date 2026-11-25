@@ -1,7 +1,17 @@
 """Video JPEG bajo demanda sobre el puente USB-UART de la cámara."""
 
 import re
+import struct
+from dataclasses import dataclass
 from time import monotonic
+
+
+@dataclass(frozen=True)
+class NorthCalibration:
+    points: tuple = ((112, 32), (112, 206), (208, 32), (208, 206))
+
+    def command(self):
+        return b"C" + struct.pack("<8H", *(v for point in self.points for v in point))
 
 
 def com_port(value):
@@ -9,7 +19,7 @@ def com_port(value):
     return name if re.fullmatch(r"COM[1-9][0-9]*", name) else ""
 
 
-def camera_jpegs(port_name, stopping):
+def camera_jpegs(port_name, stopping, calibration=lambda: None):
     from PySide6.QtCore import QIODevice
     from PySide6.QtSerialPort import QSerialPort
 
@@ -22,8 +32,15 @@ def camera_jpegs(port_name, stopping):
         if stopping.wait(1.3):
             return
         port.clear()
+        previous = None
         while not stopping.is_set():
-            if port.write(b"J") != 1 or not port.waitForBytesWritten(500):
+            token = calibration()
+            command = (
+                b"J" if token is None else (token.command() if token is not previous else b"N")
+            )
+            previous = token
+            magic, header = (b"SVJ1", 8) if token is None else (b"SVJ2", 9)
+            if port.write(command) != len(command) or not port.waitForBytesWritten(500):
                 raise OSError(port.errorString())
             data = bytearray()
             deadline = monotonic() + 2
@@ -33,17 +50,18 @@ def camera_jpegs(port_name, stopping):
                 if not port.bytesAvailable():
                     port.waitForReadyRead(100)
                 data.extend(bytes(port.readAll()))
-                start = data.find(b"SVJ1")
+                start = data.find(magic)
                 if start < 0:
                     del data[:-3]
                     continue
                 del data[:start]
-                if len(data) >= 8:
+                if len(data) >= header:
                     length = int.from_bytes(data[4:8], "little")
                     if not 0 < length <= 256 * 1024:
                         raise ValueError("Longitud JPEG inválida")
-                    if len(data) >= 8 + length:
-                        yield bytes(data[8 : 8 + length])
+                    if len(data) >= header + length:
+                        count = data[8] if token is not None and data[8] <= 32 else None
+                        yield bytes(data[header : header + length]), token, count
                         stopping.wait(0.02)
                         break
     finally:

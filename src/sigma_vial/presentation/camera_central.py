@@ -3,10 +3,11 @@
 import json
 from time import monotonic
 
-from PySide6.QtCore import QRectF, QSettings, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QImage, QPainter
+from PySide6.QtCore import QPointF, QRectF, QSettings, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QFrame,
     QGridLayout,
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from sigma_vial.domain.scenario import Access
 from sigma_vial.infrastructure.live_stream import LiveStream
-from sigma_vial.infrastructure.usb_camera import com_port
+from sigma_vial.infrastructure.usb_camera import NorthCalibration, com_port
 
 SUGGESTED_URL = "http://172.20.10.2/stream"
 
@@ -32,6 +33,7 @@ QDialog#cameraCentral { background: #101d2c; }
 QFrame#cameraPanel { background: #203247; border: 1px solid #64788d; border-radius: 8px; }
 QLabel#cameraTitle { color: #ffffff; font-size: 18px; font-weight: 700; }
 QLabel#cameraState { color: #dbe9f6; font-size: 14px; font-weight: 600; }
+QCheckBox, QLabel#northHelp { color: #edf6ff; }
 QPushButton, QToolButton {
     color: #142b44; background: #f4f7fb; border: 2px solid #acbbcc;
     border-radius: 6px; padding: 6px 12px;
@@ -71,24 +73,57 @@ def camera_url(text):
 
 
 class VideoDisplay(QWidget):
+    pointPicked = Signal(int, int)
+
     def __init__(self):
         super().__init__()
         self.image = QImage()
+        self.guides = False
+        self.points = NorthCalibration().points
+        self.picking = False
         self.setMinimumSize(120, 75)
 
     def display(self, image):
         self.image = image
         self.update()
 
+    def image_rect(self):
+        size = self.image.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
+        target = QRectF(0, 0, size.width(), size.height())
+        target.moveCenter(QRectF(self.rect()).center())
+        return target
+
+    def mousePressEvent(self, event):
+        if self.picking and event.button() == Qt.MouseButton.LeftButton and not self.image.isNull():
+            target = self.image_rect()
+            pos = event.position()
+            if target.contains(pos):
+                x = min(319, int(320 * (pos.x() - target.left()) / target.width()))
+                y = min(239, int(240 * (pos.y() - target.top()) / target.height()))
+                self.pointPicked.emit(x, y)
+                return
+        super().mousePressEvent(event)
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(self.rect(), "#10243d")
         if not self.image.isNull():
-            size = self.image.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
-            target = QRectF(0, 0, size.width(), size.height())
-            target.moveCenter(QRectF(self.rect()).center())
+            target = self.image_rect()
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             painter.drawImage(target, self.image)
+            if self.guides:
+                painter.setPen(QPen(QColor("#00ffb4"), 2, Qt.PenStyle.DashLine))
+                points = [
+                    QPointF(
+                        target.left() + target.width() * x / 320,
+                        target.top() + target.height() * y / 240,
+                    )
+                    for x, y in self.points
+                ]
+                for index, point in enumerate(points):
+                    painter.drawEllipse(point, 2, 2)
+                    if index % 2:
+                        painter.drawLine(points[index - 1], point)
 
 
 class CameraPanel(QFrame):
@@ -131,6 +166,27 @@ class CameraPanel(QFrame):
         layout.addLayout(header)
         layout.addWidget(self.video, 1)
         layout.addLayout(controls)
+        if access is Access.NORTH:
+            self.detect = QCheckBox("Medir la fila con esta cámara")
+            self.detect.setEnabled(False)
+            self.detect.toggled.connect(central.toggle_detection)
+            self.calibrate = QPushButton("Calibrar con los carriles vacíos")
+            self.calibrate.clicked.connect(central.calibrate_north)
+            self.mark = QPushButton("Marcar los dos carriles")
+            self.mark.clicked.connect(central.mark_lanes)
+            self.video.pointPicked.connect(central.pick_point)
+            self.help = QLabel()
+            self.help.setObjectName("northHelp")
+            self.help.setWordWrap(True)
+            layout.addWidget(self.detect)
+            layout.addWidget(self.help)
+            actions = QHBoxLayout()
+            actions.addWidget(self.mark)
+            actions.addWidget(self.calibrate)
+            layout.addLayout(actions)
+            self.help.hide()
+            self.calibrate.hide()
+            self.mark.hide()
 
     def status(self, text, button, configured=True):
         self.state.setText(text)
@@ -169,6 +225,8 @@ class CameraCentral(QDialog):
         self.streams = {}
         self.panels = {}
         self.focused = None
+        self.north_token = None
+        self.north_frame = None
         layout = QVBoxLayout(self)
         self.grid = QGridLayout()
         layout.addLayout(self.grid, 1)
@@ -186,10 +244,82 @@ class CameraCentral(QDialog):
 
     def idle(self, access):
         panel = self.panels[access]
+        if access is Access.NORTH:
+            panel.detect.setChecked(False)
+            panel.detect.setEnabled(False)
         if access in self.urls:
             panel.status("Desconectada", "Conectar")
         else:
             panel.status("Sin configurar", "Configurar cámara", False)
+
+    def toggle_detection(self, enabled):
+        panel = self.panels[Access.NORTH]
+        self.north_token = self.north_frame = None
+        stream = self.streams.get(self.urls.get(Access.NORTH))
+        if stream is not None:
+            stream.north_token = None
+        panel.video.guides = enabled
+        panel.video.picking = False
+        if len(panel.video.points) != 4:
+            panel.video.points = NorthCalibration().points
+        panel.video.update()
+        panel.help.setText("Mantén la cámara fija y marca los dos carriles antes de la cebra.")
+        panel.help.setVisible(enabled)
+        panel.calibrate.setVisible(enabled)
+        panel.calibrate.setEnabled(enabled)
+        panel.mark.setVisible(enabled)
+
+    def mark_lanes(self):
+        self.toggle_detection(True)
+        panel = self.panels[Access.NORTH]
+        panel.video.points = ()
+        panel.video.picking = True
+        panel.calibrate.setEnabled(False)
+        panel.help.setText("Carril 1: pulsa donde empieza la fila que quieres medir.")
+
+    def pick_point(self, x, y):
+        panel = self.panels[Access.NORTH]
+        video = panel.video
+        if not video.picking:
+            return
+        if len(video.points) % 2:
+            px, py = video.points[-1]
+            if abs(x - px) + abs(y - py) < 20:
+                panel.help.setText("El tramo es muy corto. Pulsa más lejos sobre el mismo carril.")
+                return
+        video.points += ((x, y),)
+        video.update()
+        panel.help.setText(
+            (
+                "Carril 1: pulsa en el mismo carril, justo antes de la cebra.",
+                "Carril 2: pulsa donde empieza la fila que quieres medir.",
+                "Carril 2: pulsa en ese carril, justo antes de la cebra.",
+                "Con los dos carriles vacíos, pulsa Calibrar.",
+            )[len(video.points) - 1]
+        )
+        if len(video.points) == 4:
+            video.picking = False
+            panel.calibrate.setEnabled(True)
+
+    def calibrate_north(self):
+        stream = self.streams.get(self.urls.get(Access.NORTH))
+        if stream and self.panels[Access.NORTH].detect.isChecked():
+            self.north_frame = None
+            self.north_token = stream.north_token = NorthCalibration(
+                self.panels[Access.NORTH].video.points
+            )
+            self.panels[Access.NORTH].help.setText("Tomando la referencia de la vía vacía…")
+
+    def north_observation(self):
+        frame = self.north_frame
+        if (
+            frame is not None
+            and frame.north_count is not None
+            and frame.north_token is self.north_token
+            and monotonic() - frame.timestamp <= 2
+        ):
+            return self.north_token, frame.north_count
+        return None
 
     def save(self):
         self.settings.setValue("accesos", json.dumps({a.name: u for a, u in self.urls.items()}))
@@ -226,6 +356,8 @@ class CameraCentral(QDialog):
             )
             return
         running = source in self.active
+        if source is Access.NORTH:
+            self.panels[source].detect.setChecked(False)
         self.active.discard(source)
         self.urls[dest] = self.urls.pop(source)
         self.idle(source)
@@ -282,6 +414,21 @@ class CameraCentral(QDialog):
                 panel.video.display(image.copy())
                 panel.state.setText("En vivo")
                 panel.state.setToolTip("")
+                if access is Access.NORTH:
+                    panel.detect.setEnabled(bool(com_port(url)))
+                    if self.north_token is not None and frame.north_token is self.north_token:
+                        self.north_frame = frame
+                        panel.help.setText(
+                            f"Vehículos detenidos en Norte: {frame.north_count}"
+                            if frame.north_count is not None
+                            else "Se usan las filas simuladas. Revisa el encuadre y la calibración."
+                        )
+            elif (
+                access is Access.NORTH
+                and self.north_frame
+                and monotonic() - self.north_frame.timestamp > 2
+            ):
+                panel.help.setText("Lectura vencida. Se usan las filas simuladas.")
         if not self.active and not self.streams:
             self.timer.stop()
 

@@ -175,8 +175,8 @@ La percepción funciona localmente con vehículos simulados.
 ## Versión de presentación
 
 La rama `main` reúne el simulador, la interfaz y el firmware del primer ESP32.
-El procesador recibe por Wi-Fi los conteos de cola del simulador. Para incorporar
-una cámara queda por definir qué acceso observará y si entregará imágenes o conteos.
+El procesador recibe los cuatro conteos por Wi-Fi o por USB. Esta rama añade
+la medición opcional de la fila de Norte con la cámara física por USB.
 
 ## Revisión de la interfaz
 
@@ -541,10 +541,19 @@ conservación de objetos estáticos. Esto no es una validación de cámaras fís
 4. Repite el paso anterior en cada acceso cuando tengas las otras cámaras. En **Opciones** puedes editar la URL, mover la cámara a un acceso libre o quitar la asignación. **Desconectar** conserva la URL. Al volver a abrir la central, pulsa **Conectar** en los accesos que quieras ver.
 5. Usa **Ampliar** y **Volver a la cuadrícula** para cambiar de vista. Cerrar la central detiene las transmisiones. Desde la misma ventana puedes abrir **Monitoreo simulado y laboratorio de visión**.
 
-Las cámaras físicas en esta fase solo muestran video. La simulación y el procesador de demanda conservan su fuente de observaciones. Para ver cámaras y procesador al mismo tiempo, el PC necesita una ruta de red hacia cada dispositivo.
+Las cámaras HTTP permiten ver video. Para ver cámaras y procesador por Wi-Fi al mismo tiempo, el PC necesita una ruta de red hacia cada dispositivo.
 
 En este PC, al pulsar **Conectar al ESP32** para la IP de presentación, si falla TCP desde **Estudiantes-CEIPA**, SIGMA VIAL solicita a Windows conectarse al perfil guardado **SIGMA-VIAL-Prueba-cf98**. El panel confirma la conexión al recibir PONG. En la red del iPhone mantiene la conexión de las cámaras; para pasar al Wi-Fi del procesador usa **Abrir Wi-Fi de Windows**.
 
 ## Presentación por USB directo
 
 Conecta el procesador y la cámara al PC con cables USB de datos y cierra los monitores serie. En **Cambiar dirección**, escribe el puerto del procesador (COM3 en este PC). En **Central de Monitoreo → Norte → Opciones → Editar URL**, escribe el puerto de la cámara (COM4). En las sesiones siguientes, pulsa **Conectar al ESP32**, inicia la simulación y pulsa **Conectar** en Norte. La aplicación conserva los puertos elegidos. [Firmware y protocolo de la cámara USB](firmware/esp32-camara/README.md).
+
+### Medir la fila de Norte con la cámara
+
+1. Con la simulación detenida y el acceso vacío, apunta la cámara a los dos carriles de Norte que llegan a la cebra. Usa el zoom para que se distingan los vehículos y el espacio entre ellos. Deja la cámara fija.
+2. En **Central de Monitoreo → Norte**, espera **En vivo** y activa **Medir la fila con esta cámara**. Pulsa **Marcar los dos carriles**. En el video, pulsa dos puntos en el centro del primer carril, uno aguas arriba y otro junto a la línea de parada. Repite en el segundo carril de entrada. Pulsa **Calibrar con los carriles vacíos**. Si cambias el encuadre o el zoom, vuelve a marcar y calibrar.
+3. Pulsa **Iniciar** y agrega vehículos. Puedes minimizar la central. La cámara estima cuántos vehículos permanecen detenidos sobre las guías. SIGMA VIAL combina esa lectura con las filas simuladas de Sur, Oriente y Occidente, y manda una muestra por segundo al procesador.
+4. El panel identifica la fuente de la muestra. En este modo la respuesta del ESP32 da prioridad al eje con mayor fila. El simulador aplica el verde mínimo, la prioridad peatonal, los límites de espera, el amarillo y el despeje. Con empate, vía vacía, lectura caducada o placa desconectada, decide el controlador habitual. Desmarca la casilla para volver al modo simulado.
+
+La medición por contraste está pensada para una demostración con fondo fijo. Un reflejo, una mano o dos vehículos que aparecen unidos en la imagen pueden alterar el conteo.

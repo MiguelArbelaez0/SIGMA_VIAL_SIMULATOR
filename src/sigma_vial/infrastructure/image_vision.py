@@ -13,6 +13,8 @@ from sigma_vial.domain.scenario import Access
 class ImageFrame:
     pixels: object
     timestamp: float
+    north_token: object | None = None
+    north_count: int | None = None
 
 
 class ImageSource(Protocol):

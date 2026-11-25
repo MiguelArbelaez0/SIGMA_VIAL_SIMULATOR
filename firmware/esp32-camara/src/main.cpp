@@ -1,5 +1,12 @@
 #include <Arduino.h>
 #include <esp_camera.h>
+#ifdef SIGMA_CAMARA_USB
+#include <img_converters.h>
+#include "north_queue.h"
+
+NorthQueue northQueue;
+uint8_t* rgb = nullptr;
+#endif
 bool cameraReady = false;
 #ifndef SIGMA_CAMARA_USB
 #include <WiFi.h>
@@ -40,6 +47,7 @@ esp_err_t stream(httpd_req_t* req) {
 void setup() {
 #ifdef SIGMA_CAMARA_USB
     Serial.begin(460800);
+    Serial.setTimeout(250);
 #else
     Serial.begin(115200);
 #endif
@@ -87,12 +95,28 @@ void setup() {
 
 void loop() {
 #ifdef SIGMA_CAMARA_USB
-    if (cameraReady && Serial.available() && Serial.read() == 'J') {
+    const int command = Serial.available() ? Serial.read() : -1;
+    if (cameraReady && (command == 'J' || command == 'C' || command == 'N')) {
+        bool valid = true;
+        if (command == 'C') {
+            uint8_t points[16];
+            valid = Serial.readBytes(points, sizeof(points)) == sizeof(points) &&
+                northQueue.setGuides(points);
+        }
         camera_fb_t* frame = esp_camera_fb_get();
         if (frame) {
             uint32_t length = frame->len;
-            Serial.write(reinterpret_cast<const uint8_t*>("SVJ1"), 4);
+            const bool detect = command != 'J';
+            uint8_t count = NorthQueue::unknown;
+            if (detect) {
+                if (!rgb) rgb = static_cast<uint8_t*>(ps_malloc(320 * 240 * 3));
+                const bool decoded = valid && rgb && frame->width == 320 && frame->height == 240 &&
+                    fmt2rgb888(frame->buf, length, frame->format, rgb);
+                count = northQueue.observe(decoded ? rgb : nullptr, command == 'C', millis());
+            }
+            Serial.write(reinterpret_cast<const uint8_t*>(detect ? "SVJ2" : "SVJ1"), 4);
             Serial.write(reinterpret_cast<const uint8_t*>(&length), sizeof(length));
+            if (detect) Serial.write(count);
             Serial.write(frame->buf, length);
             esp_camera_fb_return(frame);
         }

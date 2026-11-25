@@ -128,14 +128,65 @@ def test_camera_address_validation():
             camera_url(value)
 
 
-def test_usb_camera_handles_fragmented_frame_and_closes(monkeypatch):
+def test_only_north_uses_fresh_frames_from_current_calibration(qtbot, tmp_path):
+    from time import monotonic
+    from types import SimpleNamespace
+
+    from sigma_vial.infrastructure.image_vision import ImageFrame
+
+    settings = QSettings(str(tmp_path / "north.ini"), QSettings.Format.IniFormat)
+    center = CameraCentral(None, settings)
+    qtbot.addWidget(center)
+    n = Access.NORTH
+    panel = center.panels[n]
+    assert not panel.detect.isChecked() and not panel.detect.isEnabled()
+    assert all(not hasattr(center.panels[a], "detect") for a in Access if a != n)
+    center.urls[n] = "COM4"
+    stream = center.streams["COM4"] = SimpleNamespace(north_token=None)
+    panel.detect.setEnabled(True)
+    panel.detect.setChecked(True)
+    panel.mark.click()
+    for point in [(120, 20), (121, 22)]:
+        center.pick_point(*point)
+    assert len(panel.video.points) == 1 and not panel.calibrate.isEnabled()
+    for point in [(125, 130), (155, 20), (158, 130)]:
+        center.pick_point(*point)
+    panel.calibrate.click()
+    token = stream.north_token
+    assert token.points == panel.video.points and center.north_observation() is None
+    center.north_frame = ImageFrame(None, monotonic(), token, 0)
+    assert center.north_observation() == (token, 0)
+    center.north_frame = ImageFrame(None, monotonic() - 3, token, 5)
+    assert center.north_observation() is None
+    panel.calibrate.click()
+    center.north_frame = ImageFrame(None, monotonic(), token, 3)
+    assert center.north_observation() is None
+    panel.detect.setChecked(False)
+    assert stream.north_token is None and center.north_observation() is None
+
+
+@pytest.mark.parametrize("detect", [False, True])
+def test_usb_camera_handles_fragmented_frame_and_closes(monkeypatch, detect):
     from PySide6 import QtSerialPort
 
-    from sigma_vial.infrastructure.usb_camera import camera_jpegs
+    from sigma_vial.infrastructure.usb_camera import NorthCalibration, camera_jpegs
+
+    token = NorthCalibration() if detect else None
 
     class Port:
         def __init__(self):
-            self.chunks = iter([b"boot\r\nSV", b"J1\x04", b"\x00\x00\x00ab", b"cd"])
+            self.requests = []
+            self.chunks = iter(
+                [
+                    b"boot\r\nSV",
+                    b"J2\x04",
+                    b"\x00\x00\x00\xffab",
+                    b"cd",
+                    b"SVJ2\x04\x00\x00\x00\x03abcd",
+                ]
+                if detect
+                else [b"boot\r\nSV", b"J1\x04", b"\x00\x00\x00ab", b"cd"]
+            )
             self.closed = False
 
         def setPortName(self, name):
@@ -151,7 +202,7 @@ def test_usb_camera_handles_fragmented_frame_and_closes(monkeypatch):
             pass
 
         def write(self, request):
-            assert request == b"J"
+            self.requests.append(request)
             return len(request)
 
         def waitForBytesWritten(self, timeout):
@@ -168,7 +219,12 @@ def test_usb_camera_handles_fragmented_frame_and_closes(monkeypatch):
 
     port = Port()
     monkeypatch.setattr(QtSerialPort, "QSerialPort", lambda: port)
-    frames = camera_jpegs(camera_url(" com4 "), Event())
-    assert next(frames) == b"abcd"
+    frames = camera_jpegs(camera_url(" com4 "), Event(), lambda: token)
+    assert next(frames) == (b"abcd", token, None)
+    if detect:
+        assert next(frames) == (b"abcd", token, 3)
+        assert port.requests == [token.command(), b"N"]
+    else:
+        assert port.requests == [b"J"]
     frames.close()
     assert port.closed

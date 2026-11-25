@@ -2,6 +2,7 @@
 
 import re
 import sys
+from time import monotonic
 
 from PySide6.QtCore import QIODevice, QProcess, QSettings, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -48,7 +49,7 @@ def demand_text(response):
 
 
 class WifiPanel(QGroupBox):
-    def __init__(self, queue_counts=None, settings=None):
+    def __init__(self, queue_counts=None, settings=None, north_observation=lambda: None):
         super().__init__("Procesador ESP32")
         self.settings = (
             settings if settings is not None else QSettings("SIGMA VIAL", "Procesador ESP32")
@@ -60,6 +61,9 @@ class WifiPanel(QGroupBox):
         self.change_address = QPushButton("Cambiar dirección")
         self.change_address.clicked.connect(self.edit_address)
         self.queue_counts = queue_counts
+        self.north_observation = north_observation
+        self.sample_token = None
+        self.decision = None
         self.sample_button = QPushButton("Consultar vehículos en espera")
         self.sample_button.setEnabled(False)
         self.sample_button.clicked.connect(self.send_sample)
@@ -144,6 +148,8 @@ class WifiPanel(QGroupBox):
 
     def set_running(self, running):
         self.running = running
+        self.decision = None
+        self.accept_decision = False
         if not self.ready:
             return
         if running:
@@ -169,10 +175,26 @@ class WifiPanel(QGroupBox):
     def send_sample(self):
         if not self.ready or self.pending is not None or self.queue_counts is None:
             return
-        self.pending = "TRAFICO " + " ".join(str(count) for count in self.queue_counts())
+        counts = list(self.queue_counts())
+        observation = self.north_observation()
+        self.sample_token = None
+        if observation is not None:
+            self.sample_token, counts[0] = observation
+        self.accept_decision = self.running and observation is not None
+        self.sample_time = monotonic()
+        self.pending = "TRAFICO " + " ".join(str(count) for count in counts)
         self.sample_button.setEnabled(False)
         self.socket.write((self.pending + "\n").encode("ascii"))
         self.timer.start(5000)
+
+    def processor_axis(self):
+        if self.decision and self.ready and self.running:
+            token, axis, timestamp = self.decision
+            current = self.north_observation()
+            if current and current[0] is token and monotonic() - timestamp <= 2:
+                return axis
+            self.decision = None
+        return None
 
     def toggle(self):
         if self.socket is not None:
@@ -237,14 +259,26 @@ class WifiPanel(QGroupBox):
                 self.sent.setText(f"PC envía (N, S, E, O): {self.pending}")
                 self.reply.setText(f"ESP32 responde: {response}")
                 n, s, e, o = self.pending.split()[1:]
+                source = (
+                    "Norte medido por cámara · Otros accesos simulados"
+                    if self.sample_token is not None
+                    else "Filas medidas por el simulador"
+                )
                 self.counts.setText(
-                    "Vehículos en espera por acceso\n"
-                    f"Norte: {n}   Sur: {s}   Oriente: {e}   Occidente: {o}"
+                    f"{source}\nNorte: {n}   Sur: {s}   Oriente: {e}   Occidente: {o}"
                 )
                 self.details.show()
                 self.pending = None
                 self.sample_button.setEnabled(True)
                 summary = demand_text(response)
+                self.decision = None
+                if summary and self.accept_decision:
+                    axis = {"NS": "ns", "EO": "ew"}.get(response.rsplit("=", 1)[-1])
+                    if axis:
+                        self.decision = self.sample_token, axis, self.sample_time
+                        if self.processor_axis():
+                            name = "Norte–Sur" if axis == "ns" else "Oriente–Occidente"
+                            summary += f" El procesador pide dar paso a {name}."
                 self.result.setText(summary)
                 self.result.setVisible(bool(summary))
                 self.counts.setVisible(bool(summary))
@@ -330,6 +364,7 @@ class WifiPanel(QGroupBox):
         self.retry.stop()
         self.auto_timer.stop()
         self.ready = False
+        self.decision = None
         self.result.hide()
         self.counts.hide()
         self.details.setChecked(False)

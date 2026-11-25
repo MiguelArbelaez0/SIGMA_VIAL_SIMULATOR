@@ -22,7 +22,7 @@ El PC abre una conexión TCP IPv4 al puerto 5050 del ESP32. Envía una orden ASC
 
 El procesador suma los dos ejes, calcula el total y compara la demanda. Los otros resultados posibles son `EMPATE` y `SIN_DEMANDA` (total cero). El simulador conserva el control de los semáforos.
 
-La única fuente activa es `SimulatedObservationSource`. El punto de integración para una futura cámara es `ObservationSource.read()` en [perception.py](../../src/sigma_vial/domain/perception.py). El panel toma los campos de cola de una sola llamada a `Simulation.observations()`. Para la siguiente etapa queda por decidir si la cámara entregará imágenes o conteos, por qué enlace y qué acceso cubrirá. Un acceso fuera de su campo de visión queda sin observar. Habrá que seleccionar una sola fuente por acceso y conservar la cobertura de los demás antes de construir una muestra completa. Un cero representa una cola observada y vacía.
+Por defecto las cuatro filas provienen de `Simulation.observations()`. Al activar y calibrar la cámara USB de Norte, el PC sustituye solo el primer conteo de `TRAFICO` y usa el eje indicado por esta placa como prioridad para el semáforo simulado. Sur, Oriente y Occidente conservan sus observaciones. Una lectura óptica válida de cero significa fila vacía. Si falta una lectura reciente se recupera el modo simulado.
 
 ## Instalación y diagnóstico
 
