@@ -47,6 +47,18 @@ int main() {
     assert(observe(2500) == NorthQueue::unknown);
     background();
     assert(observe(2700) == 0);
+    // Forty separated stationary vehicles in one VGA guide, none in the other.
+    static uint8_t vga[480][640][3];
+    for (int y = 0; y < 480; ++y)
+        for (int x = 0; x < 640; ++x)
+            memcpy(vga[y][x], image[y/2][x/2], 3);
+    assert(queue.observe(vga[0][0], true, 2800, 640, 480) == NorthQueue::unknown);
+    for (int n = 0; n < 40; ++n)
+        for (int y = 46 + n*8; y < 51 + n*8; ++y)
+            for (int x = 177; x <= 183; ++x)
+                memset(vga[y][x], 205, 3);
+    assert(queue.observe(vga[0][0], false, 3000, 640, 480) == 0);
+    assert(queue.observe(vga[0][0], false, 3800, 640, 480) == 40);
     points[1] = 2;  // Out-of-frame coordinate invalidates the calibration.
     assert(!queue.setGuides(points));
     assert(observe(2800) == NorthQueue::unknown);

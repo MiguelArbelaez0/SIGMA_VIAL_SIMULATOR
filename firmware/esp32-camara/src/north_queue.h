@@ -23,32 +23,40 @@ public:
         return true;
     }
 
-    uint8_t observe(const uint8_t* rgb, bool calibrate, uint32_t now) {
-        if (!rgb) {
+    uint8_t observe(const uint8_t* rgb, bool calibrate, uint32_t now, int w = 320, int h = 240) {
+        if (!rgb || !((w == 320 && h == 240) || (w == 640 && h == 480))) {
             clearTracks();
             if (calibrate) ready = false;
             return unknown;
         }
         if (calibrate) {
-            for (int lane = 0; lane < 2; ++lane)
-                for (int row = 0; row < rows; ++row)
+            width = w;
+            height = h;
+            for (int lane = 0; lane < 2; ++lane) {
+                const int* p = guides + 4 * lane;
+                const int dx = abs(p[2] - p[0]) * width / 320;
+                const int dy = abs(p[3] - p[1]) * height / 240;
+                lengths[lane] = 1 + (dx > dy ? dx : dy);
+                for (int row = 0; row < lengths[lane]; ++row)
                     sample(rgb, lane, row, background[lane][row]);
+            }
             sceneMatches(rgb, true);
             ready = true;
             clearTracks();
             return unknown;
         }
-        if (!ready) return unknown;
+        if (!ready || w != width || h != height) return unknown;
         if (!sceneMatches(rgb, false)) {
             clearTracks();
             return unknown;
         }
-        if (now - lastFrame > 600) clearTracks();
+        if (now - lastFrame > 1800) clearTracks();
         lastFrame = now;
         int count = 0;
         for (int lane = 0; lane < 2; ++lane) {
-            Track next[maxTracks]{};
-            bool used[maxTracks]{};
+            const int rows = lengths[lane];
+            Track next[capacity];
+            bool used[capacity]{};
             int found = 0, start = -1, last = -1;
             for (int row = 0; row <= rows; ++row) {
                 uint8_t pixel[3];
@@ -59,7 +67,7 @@ public:
                 } else if (start >= 0 && (row == rows || row - last >= 2)) {
                     if (last - start >= 3) {
                         // A continuous patch covering most of the guide is unusable.
-                        if (last - start > rows * 3 / 4 || found == maxTracks) {
+                        if (last - start > rows * 3 / 4) {
                             clearTracks();
                             return unknown;
                         }
@@ -78,19 +86,22 @@ public:
                     start = -1;
                 }
             }
-            memcpy(tracks[lane], next, sizeof(next));
+            memcpy(tracks[lane], next, found * sizeof(Track));
             sizes[lane] = found;
         }
         return count;
     }
 
 private:
-    static constexpr int rows = 88, maxTracks = 16;
+    // Each segment needs four samples; two clear samples separate adjacent cars.
+    // Even both longest VGA guides together fit the count byte (255 = unknown).
+    static constexpr int maxPixels = 640, capacity = (maxPixels + 2) / 6;
     struct Track { int start, end; uint32_t since; };
-    uint8_t background[2][rows][3]{};
+    uint8_t background[2][maxPixels][3]{};
     int16_t edges[30][40]{};
     uint32_t lastFrame = 0;
-    Track tracks[2][maxTracks]{};
+    Track tracks[2][capacity]{};
+    int width = 320, height = 240, lengths[2]{};
     int sizes[2]{};
     int guides[8] = {112,32,112,206,208,32,208,206};
     bool ready = false;
@@ -104,8 +115,9 @@ private:
         int anchors = 0, lost = 0;
         for (int y = 4; y < 240; y += 8) {
             for (int x = 4; x < 320; x += 8) {
-                const uint8_t* p = rgb + 3 * (y * 320 + x);
-                const int contrast = luminance(p + 3 * (320 + 2)) - luminance(p - 3 * (320 + 2));
+                const uint8_t* p = rgb + 3 * (y * height / 240 * width + x * width / 320);
+                const int offset = 3 * (width + 2) * (width / 320);
+                const int contrast = luminance(p + offset) - luminance(p - offset);
                 int16_t& reference = edges[y / 8][x / 8];
                 if (save) reference = contrast;
                 if (abs(reference) < 30) continue;
@@ -120,10 +132,12 @@ private:
     }
     void sample(const uint8_t* rgb, int lane, int row, uint8_t out[3]) const {
         const int* p = guides + 4 * lane;
-        int x = p[0] + (p[2] - p[0]) * row / (rows - 1);
-        const int y = p[1] + (p[3] - p[1]) * row / (rows - 1);
-        x = x < 1 ? 1 : (x > 318 ? 318 : x);
-        const uint8_t* mid = rgb + 3 * (y * 320 + x);
+        const int intervals = lengths[lane] - 1;
+        const int scale = width / 320;
+        int x = p[0] * scale + (p[2] - p[0]) * scale * row / intervals;
+        const int y = p[1] * scale + (p[3] - p[1]) * scale * row / intervals;
+        x = x < 1 ? 1 : (x > width - 2 ? width - 2 : x);
+        const uint8_t* mid = rgb + 3 * (y * width + x);
         for (int c = 0; c < 3; ++c)
             out[c] = (mid[c-3] + mid[c] + mid[c+3]) / 3;
     }

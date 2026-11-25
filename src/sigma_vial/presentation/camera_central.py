@@ -4,7 +4,7 @@ import json
 from time import monotonic
 
 from PySide6.QtCore import QPointF, QRectF, QSettings, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPen
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from sigma_vial.domain.scenario import Access
 from sigma_vial.infrastructure.live_stream import LiveStream
+from sigma_vial.infrastructure.north_alignment import NorthAlignment, same_guides
 from sigma_vial.infrastructure.usb_camera import NorthCalibration, com_port
 
 SUGGESTED_URL = "http://172.20.10.2/stream"
@@ -80,6 +81,7 @@ class VideoDisplay(QWidget):
         self.image = QImage()
         self.guides = False
         self.points = NorthCalibration().points
+        self.vehicles = ()
         self.picking = False
         self.setMinimumSize(120, 75)
 
@@ -111,6 +113,21 @@ class VideoDisplay(QWidget):
             target = self.image_rect()
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             painter.drawImage(target, self.image)
+            for vehicle in self.vehicles:
+                x1, y1, x2, y2 = vehicle.box
+                sx = target.width() / self.image.width()
+                sy = target.height() / self.image.height()
+                box = QRectF(
+                    target.left() + x1 * sx, target.top() + y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy
+                )
+                painter.setPen(QPen(QColor("#ffda58"), 2))
+                painter.drawRect(box)
+                label = painter.fontMetrics().boundingRect(vehicle.category).adjusted(-3, -2, 3, 2)
+                label.moveBottomLeft(box.topLeft().toPoint())
+                if label.top() < target.top():
+                    label.moveTop(int(target.top()))
+                painter.fillRect(label, QColor("#142b44"))
+                painter.drawText(label, Qt.AlignmentFlag.AlignCenter, vehicle.category)
             if self.guides:
                 painter.setPen(QPen(QColor("#00ffb4"), 2, Qt.PenStyle.DashLine))
                 points = [
@@ -167,6 +184,15 @@ class CameraPanel(QFrame):
         layout.addWidget(self.video, 1)
         layout.addLayout(controls)
         if access is Access.NORTH:
+            self.recognize = QCheckBox("Identificar vehículos en el video")
+            self.recognize.setEnabled(False)
+            self.recognize.toggled.connect(central.toggle_recognition)
+            self.recognized = QLabel()
+            self.recognized.setObjectName("northHelp")
+            self.recognized.setWordWrap(True)
+            layout.addWidget(self.recognize)
+            layout.addWidget(self.recognized)
+            self.recognized.hide()
             self.detect = QCheckBox("Medir la fila con esta cámara")
             self.detect.setEnabled(False)
             self.detect.toggled.connect(central.toggle_detection)
@@ -174,6 +200,8 @@ class CameraPanel(QFrame):
             self.calibrate.clicked.connect(central.calibrate_north)
             self.mark = QPushButton("Marcar los dos carriles")
             self.mark.clicked.connect(central.mark_lanes)
+            self.auto_align = QPushButton("Volver a la alineación automática")
+            self.auto_align.clicked.connect(lambda: central.toggle_detection(True))
             self.video.pointPicked.connect(central.pick_point)
             self.help = QLabel()
             self.help.setObjectName("northHelp")
@@ -184,6 +212,8 @@ class CameraPanel(QFrame):
             actions.addWidget(self.mark)
             actions.addWidget(self.calibrate)
             layout.addLayout(actions)
+            layout.addWidget(self.auto_align)
+            self.auto_align.hide()
             self.help.hide()
             self.calibrate.hide()
             self.mark.hide()
@@ -200,7 +230,7 @@ class CameraPanel(QFrame):
 class CameraCentral(QDialog):
     openLaboratory = Signal()
 
-    def __init__(self, owner, settings=None):
+    def __init__(self, owner, settings=None, *, north_scene=None, north_clear=lambda: True):
         super().__init__(owner)
         self.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint)
         self.setObjectName("cameraCentral")
@@ -226,7 +256,15 @@ class CameraCentral(QDialog):
         self.panels = {}
         self.focused = None
         self.north_token = None
+        self.recognition_token = None
         self.north_frame = None
+        self.north_scene = north_scene
+        self.north_clear = north_clear
+        self.alignment = None
+        self.markers = []
+        self.candidate = None
+        self.stable_frames = 0
+        self.missing_counts = 0
         layout = QVBoxLayout(self)
         self.grid = QGridLayout()
         layout.addLayout(self.grid, 1)
@@ -245,6 +283,8 @@ class CameraCentral(QDialog):
     def idle(self, access):
         panel = self.panels[access]
         if access is Access.NORTH:
+            panel.recognize.setChecked(False)
+            panel.recognize.setEnabled(False)
             panel.detect.setChecked(False)
             panel.detect.setEnabled(False)
         if access in self.urls:
@@ -252,7 +292,19 @@ class CameraCentral(QDialog):
         else:
             panel.status("Sin configurar", "Configurar cámara", False)
 
+    def toggle_recognition(self, enabled):
+        panel = self.panels[Access.NORTH]
+        self.recognition_token = object() if enabled else None
+        stream = self.streams.get(self.urls.get(Access.NORTH))
+        if stream:
+            stream.recognition_token = self.recognition_token
+        panel.video.vehicles = ()
+        panel.video.update()
+        panel.recognized.setText("Buscando vehículos en el video…")
+        panel.recognized.setVisible(enabled)
+
     def toggle_detection(self, enabled):
+        self.stop_alignment()
         panel = self.panels[Access.NORTH]
         self.north_token = self.north_frame = None
         stream = self.streams.get(self.urls.get(Access.NORTH))
@@ -268,12 +320,78 @@ class CameraCentral(QDialog):
         panel.calibrate.setVisible(enabled)
         panel.calibrate.setEnabled(enabled)
         panel.mark.setVisible(enabled)
+        panel.auto_align.hide()
+        if enabled and self.north_scene is not None:
+            geometry = self.north_scene.geometry
+            self.alignment = NorthAlignment(geometry.lane_width, geometry.stop_distance)
+            for key, (x, y) in zip(self.alignment.ids, self.alignment.origins, strict=True):
+                pixels = self.alignment.marker(key)
+                h, w = pixels.shape
+                image = QImage(
+                    pixels.data, w, h, pixels.strides[0], QImage.Format.Format_Grayscale8
+                )
+                item = self.north_scene.addPixmap(QPixmap.fromImage(image))
+                scale = self.alignment.side / self.alignment.marker_pixels
+                margin = scale * self.alignment.margin
+                item.setScale(scale)
+                item.setPos(x - margin, y - margin)
+                item.setZValue(100)
+                self.markers.append(item)
+            panel.video.guides = False
+            panel.calibrate.hide()
+            panel.help.setText("Apunta a las dos marcas de Norte con los carriles vacíos.")
+
+    def stop_alignment(self):
+        for item in self.markers:
+            self.north_scene.removeItem(item)
+        self.markers.clear()
+        self.alignment = self.candidate = None
+        self.stable_frames = 0
+        self.missing_counts = 0
+
+    def align_frame(self, panel, stream, frame):
+        points = self.alignment.locate(frame.pixels)
+        if self.north_token and same_guides(self.north_token.points, points):
+            if frame.north_token is not self.north_token:
+                return
+            self.missing_counts = self.missing_counts + 1 if frame.north_count is None else 0
+            if self.missing_counts < 3 or not self.north_clear():
+                return
+            self.candidate = None
+        self.missing_counts = 0
+        self.north_token = self.north_frame = stream.north_token = None
+        panel.video.guides = False
+        if points is None or not self.north_clear():
+            self.candidate = None
+            self.stable_frames = 0
+            panel.help.setText(
+                "Encuadra ambas marcas de Norte. Puedes ampliar el cruce o marcar a mano."
+                if points is None
+                else "Esperando que se vacíen los carriles de Norte para calibrar."
+            )
+            return
+        if not same_guides(self.candidate, points):
+            self.candidate = points
+            self.stable_frames = 0
+        self.stable_frames += 1
+        panel.help.setText("Carriles localizados. Mantén la cámara quieta un momento.")
+        if self.stable_frames >= 2:
+            panel.video.points = points
+            panel.video.guides = True
+            self.calibrate_north()
 
     def mark_lanes(self):
-        self.toggle_detection(True)
+        self.stop_alignment()
         panel = self.panels[Access.NORTH]
+        stream = self.streams.get(self.urls.get(Access.NORTH))
+        if stream:
+            stream.north_token = None
+        self.north_token = self.north_frame = None
+        panel.video.guides = True
         panel.video.points = ()
         panel.video.picking = True
+        panel.calibrate.show()
+        panel.auto_align.setVisible(self.north_scene is not None)
         panel.calibrate.setEnabled(False)
         panel.help.setText("Carril 1: pulsa donde empieza la fila que quieres medir.")
 
@@ -357,6 +475,7 @@ class CameraCentral(QDialog):
             return
         running = source in self.active
         if source is Access.NORTH:
+            self.panels[source].recognize.setChecked(False)
             self.panels[source].detect.setChecked(False)
         self.active.discard(source)
         self.urls[dest] = self.urls.pop(source)
@@ -415,7 +534,16 @@ class CameraCentral(QDialog):
                 panel.state.setText("En vivo")
                 panel.state.setToolTip("")
                 if access is Access.NORTH:
+                    panel.recognize.setEnabled(True)
+                    if self.recognition_token and frame.recognition_token is self.recognition_token:
+                        panel.video.vehicles = frame.vehicles
+                        panel.recognized.setText(
+                            frame.recognition_error
+                            or f"Vehículos reconocidos en la imagen: {len(frame.vehicles)}"
+                        )
                     panel.detect.setEnabled(bool(com_port(url)))
+                    if self.alignment is not None:
+                        self.align_frame(panel, stream, frame)
                     if self.north_token is not None and frame.north_token is self.north_token:
                         self.north_frame = frame
                         panel.help.setText(

@@ -15,6 +15,9 @@ class ImageFrame:
     timestamp: float
     north_token: object | None = None
     north_count: int | None = None
+    recognition_token: object | None = None
+    vehicles: tuple[ImageDetection, ...] = ()
+    recognition_error: str = ""
 
 
 class ImageSource(Protocol):

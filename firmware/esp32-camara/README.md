@@ -1,6 +1,8 @@
 # Cámara Freenove ESP32-WROVER-DEV
 
-Abre esta carpeta con **PlatformIO → Open Project**. El entorno predeterminado `usb` entrega imágenes JPEG de 320 × 240 por el puente USB-serie a 460800 baudios. El PC solicita cada imagen enviando el byte ASCII J. La cámara responde con la marca SVJ1, el tamaño JPEG en cuatro bytes little-endian y la imagen. Cierra cualquier monitor serie antes de conectar la Central.
+Abre esta carpeta con **PlatformIO → Open Project**. El entorno predeterminado `usb` entrega imágenes JPEG de 640 × 480 en la WROVER con PSRAM. Conserva 320 × 240 si la placa arranca sin PSRAM. El PC solicita cada imagen enviando el byte ASCII J. La cámara responde con la marca SVJ1, el tamaño JPEG en cuatro bytes little-endian y la imagen. Cierra cualquier monitor serie antes de conectar la Central.
+
+El puerto empieza a 460800 baudios. La Central solicita la transferencia rápida con `F`; cuando recibe `SVF1`, envía la petición y lee ese fotograma a 921600. Ambas partes vuelven a 460800 al terminar. El firmware anterior sigue aceptando las peticiones normales y la Central recupera la velocidad base si falla la transferencia rápida.
 
 El entorno alternativo `presentacion` conecta la cámara al punto de acceso del procesador. Usa las macros privadas `SIGMA_AP_SSID` y `SIGMA_AP_PASSWORD` de `../esp32-procesador/include/ap_local.h`. Ejecuta `pio run -e presentacion` para compilar la variante inalámbrica. Para la variante de campus usa `pio run -e freenove_esp32_wrover` con la macro privada `SIGMA_WIFI_PASSWORD` en `include/wifi_local.h`.
 
@@ -14,6 +16,6 @@ La asignación de pines corresponde al [ejemplo CameraWebServer de Freenove](htt
 
 ### Medición opcional en Norte por USB
 
-La central envía `C` seguido de ocho coordenadas uint16 little-endian (x e y de los dos extremos de cada carril) para guardar la referencia vacía en RAM. Después solicita cada observación con `N`. Ambos comandos devuelven `SVJ2`, la longitud JPEG uint32 little-endian, un byte de conteo y el JPEG del mismo fotograma. El valor 255 indica una lectura no disponible. `J` conserva el formato de video `SVJ1`.
+La central envía `C` seguido de ocho coordenadas uint16 little-endian (x e y de los dos extremos de cada carril, en el espacio de referencia 320 × 240) para guardar la referencia vacía en RAM. La cámara las proyecta a la resolución de captura. Después solicita cada observación con `N`. Ambos comandos devuelven `SVJ2`, la longitud JPEG uint32 little-endian, un byte de conteo y el JPEG del mismo fotograma. El valor 255 indica una lectura no disponible. `J` conserva el formato de video `SVJ1`.
 
 La placa decodifica el JPEG, compara el color a lo largo de las guías con el fondo y cuenta tramos contrastados cuyos extremos permanecen estables al menos 0,7 segundos. La muestra describe la fila visible en ese instante. Sigue los pasos de [calibración y presentación](../../README.md#medir-la-fila-de-norte-con-la-cámara).

@@ -1,9 +1,11 @@
 """Una captura HTTP por URL. El consumidor solo recibe el fotograma más reciente."""
 
+from dataclasses import replace
+from pathlib import Path
 from threading import Event, Lock, Thread
 from time import monotonic
 
-from sigma_vial.infrastructure.image_vision import ImageFrame, read_next_frame
+from sigma_vial.infrastructure.image_vision import ImageFrame, YoloXDetector, read_next_frame
 from sigma_vial.infrastructure.usb_camera import camera_jpegs, com_port
 
 
@@ -15,6 +17,9 @@ class LiveStream(Thread):
         self.lock = Lock()
         self.latest = None
         self.north_token = None
+        self.recognition_token = None
+        self.detector = None
+        self.failed_token = None
         self.error = ""
         self.last_received = monotonic()
 
@@ -66,6 +71,24 @@ class LiveStream(Thread):
                 capture.release()
 
     def publish(self, frame):
+        token = self.recognition_token
+        if token is not None:
+            try:
+                if self.failed_token is not token:
+                    if self.detector is None:
+                        model = Path(__file__).resolve().parents[3] / "assets/vision/yolox.onnx"
+                        self.detector = YoloXDetector(str(model))
+                    frame = replace(frame, vehicles=tuple(self.detector.detect(frame)))
+            except Exception:
+                self.failed_token = token
+                self.detector = None
+            frame = replace(
+                frame,
+                recognition_token=token,
+                recognition_error="Reconocimiento no disponible. Revisa el modelo YOLOX local."
+                if self.failed_token is token
+                else "",
+            )
         with self.lock:
             self.latest = frame
             self.last_received = monotonic()

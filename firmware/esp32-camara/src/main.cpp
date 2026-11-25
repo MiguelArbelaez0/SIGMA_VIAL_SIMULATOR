@@ -6,6 +6,16 @@
 
 NorthQueue northQueue;
 uint8_t* rgb = nullptr;
+bool fastFrame = false;
+uint32_t fastSince = 0;
+
+void endFastFrame() {
+    if (fastFrame) {
+        Serial.flush();
+        Serial.updateBaudRate(460800);
+        fastFrame = false;
+    }
+}
 #endif
 bool cameraReady = false;
 #ifndef SIGMA_CAMARA_USB
@@ -75,6 +85,12 @@ void setup() {
     c.pixel_format = PIXFORMAT_JPEG;
     c.frame_size = FRAMESIZE_QVGA;
     c.jpeg_quality = 12;
+#ifdef SIGMA_CAMARA_USB
+    if (psramFound()) {
+        c.frame_size = FRAMESIZE_VGA;
+        c.jpeg_quality = 10;
+    }
+#endif
     c.fb_count = psramFound() ? 2 : 1;
     c.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
     c.grab_mode = CAMERA_GRAB_LATEST;
@@ -96,6 +112,14 @@ void setup() {
 void loop() {
 #ifdef SIGMA_CAMARA_USB
     const int command = Serial.available() ? Serial.read() : -1;
+    if (command == 'F' && !fastFrame) {
+        Serial.print("SVF1");
+        Serial.flush();
+        Serial.updateBaudRate(921600);
+        fastFrame = true;
+        fastSince = millis();
+        return;
+    }
     if (cameraReady && (command == 'J' || command == 'C' || command == 'N')) {
         bool valid = true;
         if (command == 'C') {
@@ -109,10 +133,11 @@ void loop() {
             const bool detect = command != 'J';
             uint8_t count = NorthQueue::unknown;
             if (detect) {
-                if (!rgb) rgb = static_cast<uint8_t*>(ps_malloc(320 * 240 * 3));
-                const bool decoded = valid && rgb && frame->width == 320 && frame->height == 240 &&
+                if (!rgb) rgb = static_cast<uint8_t*>(ps_malloc(frame->width * frame->height * 3));
+                const bool decoded = valid && rgb &&
                     fmt2rgb888(frame->buf, length, frame->format, rgb);
-                count = northQueue.observe(decoded ? rgb : nullptr, command == 'C', millis());
+                count = northQueue.observe(decoded ? rgb : nullptr, command == 'C', millis(),
+                                           frame->width, frame->height);
             }
             Serial.write(reinterpret_cast<const uint8_t*>(detect ? "SVJ2" : "SVJ1"), 4);
             Serial.write(reinterpret_cast<const uint8_t*>(&length), sizeof(length));
@@ -120,7 +145,9 @@ void loop() {
             Serial.write(frame->buf, length);
             esp_camera_fb_return(frame);
         }
+        endFastFrame();
     }
+    if (fastFrame && millis() - fastSince > 900) endFastFrame();
     delay(1);
 #else
     delay(500);

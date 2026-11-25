@@ -855,7 +855,16 @@ class MainWindow(QMainWindow):
         from sigma_vial.presentation.camera_central import CameraCentral
 
         if getattr(self, "camera_central", None) is None:
-            self.camera_central = CameraCentral(self)
+            self.camera_central = CameraCentral(
+                self,
+                north_scene=self.intersection_scene,
+                north_clear=lambda: (
+                    not any(
+                        v.access is Access.NORTH and not v.inside and not v.exiting
+                        for v in self.simulation.vehicles
+                    )
+                ),
+            )
             self.camera_central.openLaboratory.connect(self._open_monitoring)
         if self.camera_central.isMinimized():
             self.camera_central.showNormal()
