@@ -1,5 +1,9 @@
 # SIGMA VIAL
 
+> **Estado:** En desarrollo  
+> **Versión:** `0.1.0 (pyproject.toml)`  
+> **Tecnologías:** Python 3.14 · PySide6 · SQLite · Tesseract OCR
+
 Aplicación de escritorio de **SIGMA SOFTWARE SOLUTIONS** con simulación vial local,
 control por demanda, percepción simulada e identificación por OCR y registro SQLite.
 
