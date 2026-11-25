@@ -8,6 +8,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtNetwork import QAbstractSocket, QHostAddress, QTcpSocket
 from PySide6.QtSerialPort import QSerialPort
 from PySide6.QtWidgets import (
+    QCheckBox,
     QGridLayout,
     QGroupBox,
     QInputDialog,
@@ -31,19 +32,19 @@ def wlan_ssids(output):
 
 def demand_text(response):
     match = re.fullmatch(
-        r"OK NS=(\d+) EO=(\d+) TOTAL=\d+ MAYOR=(NS|EO|EMPATE|SIN_DEMANDA)", response
+        r"OK NS=(\d+) EO=(\d+) TOTAL=(\d+) MAYOR=(NS|EO|EMPATE|SIN_DEMANDA)", response
     )
     if not match:
         return ""
-    ns, eo, axis = match.groups()
+    ns, eo, total, axis = match.groups()
     if axis == "SIN_DEMANDA":
-        return "Sin demanda · ninguna cola detectada"
+        return "No hay vehículos esperando en el cruce."
     count = int(eo if axis == "EO" else ns)
     vehicles = "vehículo" if count == 1 else "vehículos"
     if axis == "EMPATE":
-        return f"Empate · {count} {vehicles} en cada eje"
-    name = "Norte–Sur" if axis == "NS" else "Oriente–Occidente"
-    return f"Mayor cola: {name} · {count} {vehicles} en ese eje"
+        return f"Empate: {count} {vehicles} en cada eje ({total} en total)."
+    name = "Norte y Sur" if axis == "NS" else "Oriente y Occidente"
+    return f"Hay más vehículos esperando entre {name}: {count} de {total} en total."
 
 
 class WifiPanel(QGroupBox):
@@ -59,7 +60,7 @@ class WifiPanel(QGroupBox):
         self.change_address = QPushButton("Cambiar dirección")
         self.change_address.clicked.connect(self.edit_address)
         self.queue_counts = queue_counts
-        self.sample_button = QPushButton("Enviar muestra de cola")
+        self.sample_button = QPushButton("Consultar vehículos en espera")
         self.sample_button.setEnabled(False)
         self.sample_button.clicked.connect(self.send_sample)
         self.sent = QLabel()
@@ -79,14 +80,23 @@ class WifiPanel(QGroupBox):
         self.result = QLabel()
         self.result.setWordWrap(True)
         self.result.hide()
+        self.counts = QLabel()
+        self.counts.setWordWrap(True)
+        self.counts.hide()
+        self.details = QCheckBox("Ver mensajes técnicos")
+        self.details.hide()
+        self.details.toggled.connect(self.sent.setVisible)
+        self.details.toggled.connect(self.reply.setVisible)
         layout.addWidget(self.status, 0, 0)
         layout.addWidget(self.change_address, 0, 1)
         layout.addWidget(self.address, 1, 0)
         layout.addWidget(self.sample_button, 1, 1)
         layout.addWidget(self.result, 2, 0, 1, 2)
-        layout.addWidget(self.sent, 3, 0, 1, 2)
-        layout.addWidget(self.reply, 4, 0, 1, 2)
-        layout.addWidget(self.wifi_settings, 5, 0, 1, 2)
+        layout.addWidget(self.counts, 3, 0, 1, 2)
+        layout.addWidget(self.details, 4, 0, 1, 2)
+        layout.addWidget(self.sent, 5, 0, 1, 2)
+        layout.addWidget(self.reply, 6, 0, 1, 2)
+        layout.addWidget(self.wifi_settings, 7, 0, 1, 2)
         self.button.clicked.connect(self.toggle)
         self.address.returnPressed.connect(self.toggle)
         self.socket = None
@@ -226,15 +236,20 @@ class WifiPanel(QGroupBox):
                 timer.stop()
                 self.sent.setText(f"PC envía (N, S, E, O): {self.pending}")
                 self.reply.setText(f"ESP32 responde: {response}")
-                self.sent.show()
-                self.reply.show()
+                n, s, e, o = self.pending.split()[1:]
+                self.counts.setText(
+                    "Vehículos en espera por acceso\n"
+                    f"Norte: {n}   Sur: {s}   Oriente: {e}   Occidente: {o}"
+                )
+                self.details.show()
                 self.pending = None
                 self.sample_button.setEnabled(True)
                 summary = demand_text(response)
                 self.result.setText(summary)
                 self.result.setVisible(bool(summary))
+                self.counts.setVisible(bool(summary))
                 if not summary:
-                    self.status.setText("Muestra rechazada")
+                    self.status.setText("La placa no pudo interpretar estos conteos.")
                 else:
                     self.status.setText("Datos actuales" if self.running else "En pausa")
             elif not self.ready and response == "PONG":
@@ -247,7 +262,7 @@ class WifiPanel(QGroupBox):
                 self.button.setToolTip("Desconectar del ESP32")
                 self.sent.clear()
                 self.reply.clear()
-                self.status.setText("Esperando primera muestra · PONG recibido")
+                self.status.setText("Placa conectada. Esperando el primer conteo.")
                 self.sample_button.setEnabled(self.queue_counts is not None)
                 if self.running:
                     self.auto_timer.start()
@@ -257,7 +272,7 @@ class WifiPanel(QGroupBox):
         def send_ping():
             if self.socket is not socket:
                 return
-            self.status.setText("Esperando PONG…")
+            self.status.setText("Esperando que responda la placa…")
             socket.write(b"PING\n")
             timer.start(5000)
 
@@ -265,9 +280,9 @@ class WifiPanel(QGroupBox):
             if self.pending is not None:
                 finish("Tiempo agotado sin respuesta a la muestra")
             elif port:
-                finish(f"Sin PONG por {port}")
+                finish(f"La placa no respondió por {port}")
             elif socket.state() == QAbstractSocket.SocketState.ConnectedState:
-                finish("TCP establecido, pero no llegó PONG")
+                finish("Se abrió la conexión, pero la placa no respondió")
             else:
                 finish("Tiempo agotado al conectar al puerto TCP 5050")
 
@@ -316,6 +331,9 @@ class WifiPanel(QGroupBox):
         self.auto_timer.stop()
         self.ready = False
         self.result.hide()
+        self.counts.hide()
+        self.details.setChecked(False)
+        self.details.hide()
         self.pending = None
         socket, self.socket = self.socket, None
         if socket is not None:

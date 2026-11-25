@@ -14,9 +14,12 @@ def settings(tmp_path):
 @pytest.mark.parametrize(
     ("response", "summary"),
     [
-        ("OK NS=0 EO=0 TOTAL=0 MAYOR=SIN_DEMANDA", "Sin demanda · ninguna cola detectada"),
-        ("OK NS=1 EO=1 TOTAL=2 MAYOR=EMPATE", "Empate · 1 vehículo en cada eje"),
-        ("OK NS=2 EO=1 TOTAL=3 MAYOR=NS", "Mayor cola: Norte–Sur · 2 vehículos en ese eje"),
+        ("OK NS=0 EO=0 TOTAL=0 MAYOR=SIN_DEMANDA", "No hay vehículos esperando en el cruce."),
+        ("OK NS=1 EO=1 TOTAL=2 MAYOR=EMPATE", "Empate: 1 vehículo en cada eje (2 en total)."),
+        (
+            "OK NS=2 EO=1 TOTAL=3 MAYOR=NS",
+            "Hay más vehículos esperando entre Norte y Sur: 2 de 3 en total.",
+        ),
     ],
 )
 def test_summary_from_processor(response, summary):
@@ -37,11 +40,11 @@ def test_panel_waits_for_complete_pong(qtbot, settings):
     assert bytes(peer.readLine()) == b"PING\n"
     peer.write(b"PO")
     qtbot.waitUntil(lambda: panel.socket.bytesAvailable() == 2)
-    assert panel.status.text() == "Esperando PONG…"
+    assert panel.status.text() == "Esperando que responda la placa…"
     assert not settings.contains("ip")
     assert panel.button.text() == "Conectando…"
     peer.write(b"NG\r\n")
-    qtbot.waitUntil(lambda: panel.status.text() == "Esperando primera muestra · PONG recibido")
+    qtbot.waitUntil(lambda: panel.status.text() == "Placa conectada. Esperando el primer conteo.")
     assert panel.button.text() == "ESP32 conectado"
     assert settings.value("ip") == "127.0.0.1"
     panel.sample_button.click()
@@ -51,7 +54,14 @@ def test_panel_waits_for_complete_pong(qtbot, settings):
     peer.write(b"OK NS=3 EO=10 TOTAL=13 MAYOR=EO\n")
     qtbot.waitUntil(panel.sample_button.isEnabled)
     assert panel.reply.text() == "ESP32 responde: OK NS=3 EO=10 TOTAL=13 MAYOR=EO"
-    assert panel.result.text() == "Mayor cola: Oriente–Occidente · 10 vehículos en ese eje"
+    assert (
+        panel.result.text()
+        == "Hay más vehículos esperando entre Oriente y Occidente: 10 de 13 en total."
+    )
+    assert panel.sent.isHidden() and panel.reply.isHidden()
+    assert panel.counts.text().endswith("Norte: 1   Sur: 2   Oriente: 7   Occidente: 3")
+    panel.details.click()
+    assert not panel.sent.isHidden() and not panel.reply.isHidden()
     socket = panel.socket
     panel.change_address.click()
     panel.findChild(QInputDialog).reject()
