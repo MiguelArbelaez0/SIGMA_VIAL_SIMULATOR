@@ -2,9 +2,15 @@
 #include <WiFi.h>
 #include <esp_camera.h>
 #include <esp_http_server.h>
+#ifdef SIGMA_CAMARA_PRESENTACION
+#include "ap_local.h"
+constexpr char SSID[] = SIGMA_AP_SSID;
+#define CAMERA_PASSWORD SIGMA_AP_PASSWORD
+#else
 #include "wifi_local.h"
-
 constexpr char SSID[] = "Estudiantes-CEIPA";
+#define CAMERA_PASSWORD SIGMA_WIFI_PASSWORD
+#endif
 httpd_handle_t server = nullptr;
 IPAddress announced;
 bool cameraReady = false;
@@ -67,8 +73,8 @@ void setup() {
     WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
-    WiFi.begin(SSID, SIGMA_WIFI_PASSWORD);
-    Serial.println("Camara lista. Conectando a Estudiantes-CEIPA...");
+    WiFi.begin(SSID, CAMERA_PASSWORD);
+    Serial.printf("Camara lista. Conectando a %s...\n", SSID);
 }
 
 void loop() {
