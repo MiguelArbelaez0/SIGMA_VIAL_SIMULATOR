@@ -114,3 +114,49 @@ def test_camera_address_validation():
     for value in ("", "file:///video", "http://user:pw@localhost/stream", "http://"):
         with pytest.raises(ValueError):
             camera_url(value)
+
+
+def test_usb_camera_handles_fragmented_frame_and_closes(monkeypatch):
+    from PySide6 import QtSerialPort
+
+    from sigma_vial.infrastructure.usb_camera import camera_jpegs
+
+    class Port:
+        def __init__(self):
+            self.chunks = iter([b"boot\r\nSV", b"J1\x04", b"\x00\x00\x00ab", b"cd"])
+            self.closed = False
+
+        def setPortName(self, name):
+            assert name == "COM4"
+
+        def setBaudRate(self, rate):
+            assert rate == 460800
+
+        def open(self, mode):
+            return True
+
+        def clear(self):
+            pass
+
+        def write(self, request):
+            assert request == b"J"
+            return len(request)
+
+        def waitForBytesWritten(self, timeout):
+            return True
+
+        def bytesAvailable(self):
+            return 1
+
+        def readAll(self):
+            return next(self.chunks)
+
+        def close(self):
+            self.closed = True
+
+    port = Port()
+    monkeypatch.setattr(QtSerialPort, "QSerialPort", lambda: port)
+    frames = camera_jpegs(camera_url(" com4 "), Event())
+    assert next(frames) == b"abcd"
+    frames.close()
+    assert port.closed

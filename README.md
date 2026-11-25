@@ -544,3 +544,7 @@ conservación de objetos estáticos. Esto no es una validación de cámaras fís
 Las cámaras físicas en esta fase solo muestran video. La simulación y el procesador de demanda conservan su fuente de observaciones. Para ver cámaras y procesador al mismo tiempo, el PC necesita una ruta de red hacia cada dispositivo.
 
 En este PC, al pulsar **Conectar al ESP32** para la IP de presentación, si falla TCP desde **Estudiantes-CEIPA**, SIGMA VIAL solicita a Windows conectarse al perfil guardado **SIGMA-VIAL-Prueba-cf98**. El panel confirma la conexión al recibir PONG. En la red del iPhone mantiene la conexión de las cámaras; para pasar al Wi-Fi del procesador usa **Abrir Wi-Fi de Windows**.
+
+## Presentación por USB directo
+
+Conecta el procesador y la cámara al PC con cables USB de datos y cierra los monitores serie. En **Cambiar dirección**, escribe el puerto del procesador (COM3 en este PC). En **Central de Monitoreo → Norte → Opciones → Editar URL**, escribe el puerto de la cámara (COM4). En las sesiones siguientes, pulsa **Conectar al ESP32**, inicia la simulación y pulsa **Conectar** en Norte. La aplicación conserva los puertos elegidos. [Firmware y protocolo de la cámara USB](firmware/esp32-camara/README.md).

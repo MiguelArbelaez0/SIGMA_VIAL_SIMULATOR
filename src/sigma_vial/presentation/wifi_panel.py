@@ -3,9 +3,10 @@
 import re
 import sys
 
-from PySide6.QtCore import QProcess, QSettings, Qt, QTimer, QUrl
+from PySide6.QtCore import QIODevice, QProcess, QSettings, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtNetwork import QAbstractSocket, QHostAddress, QTcpSocket
+from PySide6.QtSerialPort import QSerialPort
 from PySide6.QtWidgets import (
     QGridLayout,
     QGroupBox,
@@ -15,6 +16,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QToolTip,
 )
+
+from sigma_vial.infrastructure.usb_camera import com_port
 
 PRESENTATION_SSID = "SIGMA-VIAL-Prueba-cf98"
 
@@ -105,15 +108,16 @@ class WifiPanel(QGroupBox):
         dialog = QInputDialog(self)
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         dialog.setWindowTitle("Cambiar dirección del ESP32")
-        dialog.setLabelText("Dirección IPv4 del procesador")
+        dialog.setLabelText("Puerto USB (ej. COM3) o dirección IPv4 del procesador")
         dialog.setTextValue(self.address.text())
         dialog.textValueSelected.connect(self.apply_address)
         dialog.open()
 
     def apply_address(self, text):
         ip = QHostAddress(text.strip())
-        if ip.protocol() != QAbstractSocket.NetworkLayerProtocol.IPv4Protocol:
-            self.change_address.setToolTip("Introduce una dirección IPv4 válida.")
+        port = com_port(text)
+        if not port and ip.protocol() != QAbstractSocket.NetworkLayerProtocol.IPv4Protocol:
+            self.change_address.setToolTip("Introduce un puerto COM o una dirección IPv4 válida.")
             QToolTip.showText(
                 self.change_address.mapToGlobal(self.change_address.rect().center()),
                 self.change_address.toolTip(),
@@ -121,10 +125,11 @@ class WifiPanel(QGroupBox):
             )
             return
         self.change_address.setToolTip("")
-        if ip == QHostAddress(self.address.text()) and (self.ready or self.socket is not None):
+        address = port or ip.toString()
+        if address == self.address.text() and self.socket is not None:
             return
         self.disconnect_device()
-        self.address.setText(ip.toString())
+        self.address.setText(address)
         self.toggle()
 
     def set_running(self, running):
@@ -180,11 +185,12 @@ class WifiPanel(QGroupBox):
 
     def connect_device(self):
         ip = QHostAddress(self.address.text().strip())
-        if ip.protocol() != QAbstractSocket.NetworkLayerProtocol.IPv4Protocol:
+        port = com_port(self.address.text())
+        if not port and ip.protocol() != QAbstractSocket.NetworkLayerProtocol.IPv4Protocol:
             self.status.setText("Introduce la dirección IPv4 del monitor serie.")
             self.address.show()
             return
-        socket = QTcpSocket(self)
+        socket = QSerialPort(self) if port else QTcpSocket(self)
         self.socket = socket
         self.address.hide()
         socket.setReadBufferSize(64)
@@ -210,6 +216,12 @@ class WifiPanel(QGroupBox):
                     finish("Respuesta TCP demasiado larga")
                 return
             response = bytes(socket.readLine()).rstrip(b"\r\n").decode("ascii", errors="replace")
+            if port:
+                # El puerto serie también publica diagnósticos del punto de acceso.
+                while response != "PONG" and not response.startswith(("OK ", "ERROR ")):
+                    if not socket.canReadLine():
+                        return
+                    response = bytes(socket.readLine()).strip().decode("ascii", errors="replace")
             if self.pending is not None and response.startswith(("OK ", "ERROR ")):
                 timer.stop()
                 self.sent.setText(f"PC envía (N, S, E, O): {self.pending}")
@@ -230,8 +242,8 @@ class WifiPanel(QGroupBox):
                 self.ready = True
                 self.check_network = False
                 self.wifi_settings.hide()
-                self.settings.setValue("ip", ip.toString())
-                self.button.setText("ESP32 conectado")
+                self.settings.setValue("ip", port or ip.toString())
+                self.button.setText(f"ESP32 conectado · {port}" if port else "ESP32 conectado")
                 self.button.setToolTip("Desconectar del ESP32")
                 self.sent.clear()
                 self.reply.clear()
@@ -243,6 +255,8 @@ class WifiPanel(QGroupBox):
                 finish("Respuesta TCP inesperada")
 
         def send_ping():
+            if self.socket is not socket:
+                return
             self.status.setText("Esperando PONG…")
             socket.write(b"PING\n")
             timer.start(5000)
@@ -250,15 +264,13 @@ class WifiPanel(QGroupBox):
         def timeout():
             if self.pending is not None:
                 finish("Tiempo agotado sin respuesta a la muestra")
+            elif port:
+                finish(f"Sin PONG por {port}")
             elif socket.state() == QAbstractSocket.SocketState.ConnectedState:
                 finish("TCP establecido, pero no llegó PONG")
             else:
                 finish("Tiempo agotado al conectar al puerto TCP 5050")
 
-        socket.connected.connect(send_ping)
-        socket.readyRead.connect(receive)
-        socket.errorOccurred.connect(lambda _: finish(socket.errorString()))
-        socket.disconnected.connect(lambda: finish("Desconectado"))
         timer.timeout.connect(timeout)
         self.status.setText(
             "Reconectando · lectura desactualizada"
@@ -268,6 +280,33 @@ class WifiPanel(QGroupBox):
         self.button.setText("Conectando…")
         self.button.setToolTip("Cancelar el intento de conexión")
         self.address.setEnabled(False)
+        if port:
+            self.status.setText(f"Conectando a {port} por USB…")
+            socket.setPortName(port)
+            socket.setBaudRate(115200)
+            if not socket.open(QIODevice.OpenModeFlag.ReadWrite):
+                finish(socket.errorString())
+                return
+
+            def serial_handshake():
+                if self.socket is socket:
+                    socket.clear()
+                    socket.readyRead.connect(receive)
+                    send_ping()
+
+            socket.errorOccurred.connect(
+                lambda error: (
+                    finish(socket.errorString())
+                    if error != QSerialPort.SerialPortError.NoError
+                    else None
+                )
+            )
+            QTimer.singleShot(1500, socket, serial_handshake)
+            return
+        socket.connected.connect(send_ping)
+        socket.readyRead.connect(receive)
+        socket.errorOccurred.connect(lambda _: finish(socket.errorString()))
+        socket.disconnected.connect(lambda: finish("Desconectado"))
         timer.start(5000)
         socket.connectToHost(ip, 5050)
 
@@ -280,7 +319,10 @@ class WifiPanel(QGroupBox):
         self.pending = None
         socket, self.socket = self.socket, None
         if socket is not None:
-            socket.abort()
+            if isinstance(socket, QSerialPort):
+                socket.close()
+            else:
+                socket.abort()
             socket.deleteLater()
         self.sample_button.setEnabled(False)
         self.address.setEnabled(True)
@@ -290,6 +332,9 @@ class WifiPanel(QGroupBox):
         presentation = self.address.text().strip() == "192.168.4.1"
         self.wifi_settings.setVisible(bool(message) and presentation and sys.platform == "win32")
         if message:
+            if port := com_port(self.address.text()):
+                self.status.setText(f"{state}. {port}: {message}. Reintento automático.")
+                return
             network_hint = (
                 "Alimenta el ESP32 por USB y selecciona SIGMA-VIAL-Prueba-cf98 en el Wi-Fi del PC"
                 if presentation

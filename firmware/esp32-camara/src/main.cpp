@@ -1,6 +1,8 @@
 #include <Arduino.h>
-#include <WiFi.h>
 #include <esp_camera.h>
+bool cameraReady = false;
+#ifndef SIGMA_CAMARA_USB
+#include <WiFi.h>
 #include <esp_http_server.h>
 #ifdef SIGMA_CAMARA_PRESENTACION
 #include "ap_local.h"
@@ -13,7 +15,6 @@ constexpr char SSID[] = "Estudiantes-CEIPA";
 #endif
 httpd_handle_t server = nullptr;
 IPAddress announced;
-bool cameraReady = false;
 
 esp_err_t stream(httpd_req_t* req) {
     esp_err_t result = httpd_resp_set_type(req, "multipart/x-mixed-replace; boundary=frame");
@@ -34,9 +35,14 @@ esp_err_t stream(httpd_req_t* req) {
     }
     return result;
 }
+#endif
 
 void setup() {
+#ifdef SIGMA_CAMARA_USB
+    Serial.begin(460800);
+#else
     Serial.begin(115200);
+#endif
     camera_config_t c{};
     c.ledc_channel = LEDC_CHANNEL_0;
     c.ledc_timer = LEDC_TIMER_0;
@@ -70,14 +76,29 @@ void setup() {
         return;
     }
     cameraReady = true;
+#ifndef SIGMA_CAMARA_USB
     WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.begin(SSID, CAMERA_PASSWORD);
     Serial.printf("Camara lista. Conectando a %s...\n", SSID);
+#endif
 }
 
 void loop() {
+#ifdef SIGMA_CAMARA_USB
+    if (cameraReady && Serial.available() && Serial.read() == 'J') {
+        camera_fb_t* frame = esp_camera_fb_get();
+        if (frame) {
+            uint32_t length = frame->len;
+            Serial.write(reinterpret_cast<const uint8_t*>("SVJ1"), 4);
+            Serial.write(reinterpret_cast<const uint8_t*>(&length), sizeof(length));
+            Serial.write(frame->buf, length);
+            esp_camera_fb_return(frame);
+        }
+    }
+    delay(1);
+#else
     delay(500);
     if (!cameraReady) return;
     if (!WiFi.isConnected()) {
@@ -104,4 +125,5 @@ void loop() {
         Serial.printf("CAMARA IP=%s URL=http://%s/stream\n",
                       ip.toString().c_str(), ip.toString().c_str());
     }
+#endif
 }

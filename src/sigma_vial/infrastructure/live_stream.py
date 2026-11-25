@@ -3,7 +3,8 @@
 from threading import Event, Lock, Thread
 from time import monotonic
 
-from sigma_vial.infrastructure.image_vision import read_next_frame
+from sigma_vial.infrastructure.image_vision import ImageFrame, read_next_frame
+from sigma_vial.infrastructure.usb_camera import camera_jpegs, com_port
 
 
 class LiveStream(Thread):
@@ -26,6 +27,15 @@ class LiveStream(Thread):
         try:
             import cv2
 
+            if com_port(self.url):
+                import numpy as np
+
+                for jpeg in camera_jpegs(self.url, self.stopping):
+                    pixels = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+                    if pixels is not None:
+                        self.publish(ImageFrame(pixels, monotonic()))
+                return
+
             capture = cv2.VideoCapture(
                 self.url,
                 cv2.CAP_FFMPEG,
@@ -43,9 +53,7 @@ class LiveStream(Thread):
                 frame = read_next_frame(capture, monotonic())
                 if frame is None:
                     break
-                with self.lock:
-                    self.latest = frame
-                    self.last_received = monotonic()
+                self.publish(frame)
         except ImportError:
             self.error = 'Instala el extra de video con pip install -e ".[vision]".'
         except Exception as exc:
@@ -53,3 +61,8 @@ class LiveStream(Thread):
         finally:
             if capture is not None:
                 capture.release()
+
+    def publish(self, frame):
+        with self.lock:
+            self.latest = frame
+            self.last_received = monotonic()

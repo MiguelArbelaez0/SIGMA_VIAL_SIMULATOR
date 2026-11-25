@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from sigma_vial.domain.scenario import Access
 from sigma_vial.infrastructure.live_stream import LiveStream
+from sigma_vial.infrastructure.usb_camera import com_port
 
 SUGGESTED_URL = "http://172.20.10.2/stream"
 
@@ -54,6 +55,8 @@ QMenu::item:disabled { color: #586778; background: #e7ecf1; }
 
 
 def camera_url(text):
+    if port := com_port(text):
+        return port
     url = QUrl(text.strip(), QUrl.ParsingMode.StrictMode)
     if not url.isValid() or url.scheme() not in ("http", "https") or not url.host():
         raise ValueError("Introduce una URL completa que comience con http:// o https://.")
@@ -194,7 +197,7 @@ class CameraCentral(QDialog):
         text, ok = QInputDialog.getText(
             self,
             f"Configurar cámara · {access.value}",
-            "URL del video · Aceptar para conectar",
+            "URL del video o puerto USB (ej. COM4) · Aceptar para conectar",
             text=self.urls.get(access, SUGGESTED_URL),
         )
         if ok:
