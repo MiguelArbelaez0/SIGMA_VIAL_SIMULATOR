@@ -3,10 +3,27 @@
 import re
 import sys
 
-from PySide6.QtCore import QSettings, Qt, QTimer, QUrl
+from PySide6.QtCore import QProcess, QSettings, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtNetwork import QAbstractSocket, QHostAddress, QTcpSocket
-from PySide6.QtWidgets import QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton
+from PySide6.QtWidgets import (
+    QGridLayout,
+    QGroupBox,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QToolTip,
+)
+
+PRESENTATION_SSID = "SIGMA-VIAL-Prueba-cf98"
+
+
+def wlan_ssids(output):
+    return {
+        name.strip()
+        for name in re.findall(rb"(?m)^[ \t]*SSID(?: \d+)?[ \t]*:[ \t]*([^\r\n]*)", output)
+    }
 
 
 def demand_text(response):
@@ -73,6 +90,9 @@ class WifiPanel(QGroupBox):
         self.running = False
         self.ready = False
         self.pending = None
+        self.wlan = QProcess(self)
+        self.wlan.finished.connect(self._wlan_finished)
+        self.check_network = False
         self.auto_timer = QTimer(self)
         self.auto_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.auto_timer.setInterval(1000)
@@ -82,10 +102,30 @@ class WifiPanel(QGroupBox):
         self.retry.timeout.connect(self.connect_device)
 
     def edit_address(self):
+        dialog = QInputDialog(self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.setWindowTitle("Cambiar dirección del ESP32")
+        dialog.setLabelText("Dirección IPv4 del procesador")
+        dialog.setTextValue(self.address.text())
+        dialog.textValueSelected.connect(self.apply_address)
+        dialog.open()
+
+    def apply_address(self, text):
+        ip = QHostAddress(text.strip())
+        if ip.protocol() != QAbstractSocket.NetworkLayerProtocol.IPv4Protocol:
+            self.change_address.setToolTip("Introduce una dirección IPv4 válida.")
+            QToolTip.showText(
+                self.change_address.mapToGlobal(self.change_address.rect().center()),
+                self.change_address.toolTip(),
+                self.change_address,
+            )
+            return
+        self.change_address.setToolTip("")
+        if ip == QHostAddress(self.address.text()) and (self.ready or self.socket is not None):
+            return
         self.disconnect_device()
-        self.address.show()
-        self.address.setFocus()
-        self.address.selectAll()
+        self.address.setText(ip.toString())
+        self.toggle()
 
     def set_running(self, running):
         self.running = running
@@ -124,7 +164,19 @@ class WifiPanel(QGroupBox):
             self.disconnect_device()
         else:
             self.retry.stop()
+            self.check_network = (
+                sys.platform == "win32" and self.address.text().strip() == "192.168.4.1"
+            )
             self.connect_device()
+
+    def _wlan_finished(self, code, exit_status):
+        args = self.wlan.arguments()
+        names = wlan_ssids(bytes(self.wlan.readAllStandardOutput()))
+        if code or not self.check_network or self.ready:
+            return
+        if args == ["wlan", "show", "interfaces"] and names == {b"Estudiantes-CEIPA"}:
+            self.check_network = False
+            self.wlan.start("netsh", ["wlan", "connect", f"name={PRESENTATION_SSID}"])
 
     def connect_device(self):
         ip = QHostAddress(self.address.text().strip())
@@ -142,7 +194,11 @@ class WifiPanel(QGroupBox):
 
         def finish(message):
             if self.socket is socket:
+                check_network = self.check_network
                 self.disconnect_device(message)
+                self.check_network = check_network
+                if check_network and self.wlan.state() == QProcess.ProcessState.NotRunning:
+                    self.wlan.start("netsh", ["wlan", "show", "interfaces"])
                 self.button.setText("Reintentar")
                 self.retry.start(4000)
 
@@ -172,6 +228,7 @@ class WifiPanel(QGroupBox):
             elif not self.ready and response == "PONG":
                 timer.stop()
                 self.ready = True
+                self.check_network = False
                 self.wifi_settings.hide()
                 self.settings.setValue("ip", ip.toString())
                 self.button.setText("ESP32 conectado")
@@ -215,6 +272,7 @@ class WifiPanel(QGroupBox):
         socket.connectToHost(ip, 5050)
 
     def disconnect_device(self, message=""):
+        self.check_network = False
         self.retry.stop()
         self.auto_timer.stop()
         self.ready = False

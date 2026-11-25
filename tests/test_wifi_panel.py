@@ -1,8 +1,9 @@
 import pytest
 from PySide6.QtCore import QSettings
 from PySide6.QtNetwork import QHostAddress, QTcpServer
+from PySide6.QtWidgets import QInputDialog
 
-from sigma_vial.presentation.wifi_panel import WifiPanel, demand_text
+from sigma_vial.presentation.wifi_panel import WifiPanel, demand_text, wlan_ssids
 
 
 @pytest.fixture
@@ -28,7 +29,6 @@ def test_panel_waits_for_complete_pong(qtbot, settings):
     panel = WifiPanel(lambda: (1, 2, 7, 3), settings)
     qtbot.addWidget(panel)
     assert panel.address.text() == "192.168.4.1"
-    panel.change_address.click()
     panel.address.setText("127.0.0.1")
     panel.button.click()
     qtbot.waitUntil(server.hasPendingConnections)
@@ -52,6 +52,11 @@ def test_panel_waits_for_complete_pong(qtbot, settings):
     qtbot.waitUntil(panel.sample_button.isEnabled)
     assert panel.reply.text() == "ESP32 responde: OK NS=3 EO=10 TOTAL=13 MAYOR=EO"
     assert panel.result.text() == "Mayor cola: Oriente–Occidente · 10 vehículos en ese eje"
+    socket = panel.socket
+    panel.change_address.click()
+    panel.findChild(QInputDialog).reject()
+    panel.apply_address("127.0.0.1")
+    assert panel.ready and panel.socket is socket
     peer.disconnectFromHost()
     qtbot.waitUntil(lambda: panel.socket is None)
     assert panel.button.text() == "Reintentar"
@@ -117,3 +122,9 @@ def test_first_connection_recovers_when_processor_starts_later(qtbot, settings):
     qtbot.waitUntil(lambda: panel.status.text() == "Datos actuales")
     panel.disconnect_device()
     server.close()
+
+
+def test_windows_wifi_output_distinguishes_current_and_visible_ssids():
+    assert wlan_ssids(b" SSID : Estudiantes-CEIPA\r\n BSSID : aa:bb\r\n") == {b"Estudiantes-CEIPA"}
+    output = b"SSID 1 : SIGMA-VIAL-Prueba-cf98\r\nSSID 2 : iPhone de Isaid\r\n"
+    assert wlan_ssids(output) == {b"SIGMA-VIAL-Prueba-cf98", b"iPhone de Isaid"}

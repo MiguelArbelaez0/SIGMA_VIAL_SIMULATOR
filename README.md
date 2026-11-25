@@ -542,3 +542,5 @@ conservación de objetos estáticos. Esto no es una validación de cámaras fís
 5. Usa **Ampliar** y **Volver a la cuadrícula** para cambiar de vista. Cerrar la central detiene las transmisiones. Desde la misma ventana puedes abrir **Monitoreo simulado y laboratorio de visión**.
 
 Las cámaras físicas en esta fase solo muestran video. La simulación y el procesador de demanda conservan su fuente de observaciones. Para ver cámaras y procesador al mismo tiempo, el PC necesita una ruta de red hacia cada dispositivo.
+
+En este PC, al pulsar **Conectar al ESP32** para la IP de presentación, si falla TCP desde **Estudiantes-CEIPA**, SIGMA VIAL solicita a Windows conectarse al perfil guardado **SIGMA-VIAL-Prueba-cf98**. El panel confirma la conexión al recibir PONG. En la red del iPhone mantiene la conexión de las cámaras; para pasar al Wi-Fi del procesador usa **Abrir Wi-Fi de Windows**.
